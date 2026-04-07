@@ -474,7 +474,7 @@ void SmaBluetoothHub::trigger_discovery() {
 
 void SmaBluetoothHub::erase_nvs_cache() {
   nvs_handle_t handle;
-  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
+  if (nvs_open("sma_bt", NVS_READWRITE, &handle) == ESP_OK) {
     nvs_erase_all(handle);
     nvs_commit(handle);
     nvs_close(handle);
