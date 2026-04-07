@@ -44,15 +44,12 @@ Expected output: all tests pass in ~5 seconds.
 
 ### ESPHome compile test (Docker)
 
-This compiles the full component against ESPHome using Docker. It pulls the component from GitHub, so you must **push your changes first**.
+This compiles the full component against ESPHome using Docker. Mount your local component directory so you can test without pushing.
 
 ```bash
-# 1. Push changes to your branch
-git push
-
-# 2. Compile using Docker (pulls component from GitHub)
 docker run --rm \
   -v /path/to/your/config.yaml:/config/config.yaml \
+  -v /path/to/esphome_sma_bluetooth:/local_component \
   ghcr.io/esphome/esphome compile /config/config.yaml
 ```
 
@@ -79,9 +76,10 @@ wifi:
   password: "test1234"
 
 external_components:
-  - source: github://YOUR_USER/esphome_sma_bluetooth@YOUR_BRANCH
+  - source:
+      type: local
+      path: /local_component/components
     components: [sma_bluetooth]
-    refresh: always
 
 sma_bluetooth:
 ```
@@ -91,8 +89,11 @@ Then compile:
 ```bash
 docker run --rm \
   -v $(pwd)/test-config.yaml:/config/test-config.yaml \
+  -v $(pwd):/local_component \
   ghcr.io/esphome/esphome compile /config/test-config.yaml
 ```
+
+No need to push — changes are picked up directly from your working directory.
 
 ### ESPHome compile test (local install)
 
@@ -123,7 +124,7 @@ You should see lines like:
 - **Thread safety**: `App.register_sensor()` is NOT thread-safe. The BT task (FreeRTOS, core 0) sets a flag; the main ESPHome loop (core 1) creates and registers sensors.
 - **Entity metadata**: `device_class`, `unit_of_measurement`, and `icon` have no runtime C++ setters. They're packed into a `entity_fields` bitfield via `configure_entity_()`. The Python `__init__.py` registers strings via `EntityStringPool` which generates PROGMEM lookup tables in `main.cpp`.
 - **StaticVector capacity**: ESPHome uses `StaticVector<T, N>` with compile-time capacity. `push_back()` silently drops items when full. The `__init__.py` inflates capacity via `CORE.register_platform_component()`.
-- **NVS persistence**: Discovered inverter MACs, names, and serial numbers are cached to NVS flash so sensors can be pre-created during `setup()` before the API handshake.
+- **NVS persistence**: Discovered inverter MACs are cached to NVS flash so sensors can be pre-created during `setup()` before the API handshake. Device names are derived from MAC addresses (always stable).
 
 ## Code Style
 
