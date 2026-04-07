@@ -7,6 +7,8 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
+#include <algorithm>
+
 namespace esphome {
 namespace sma_bluetooth {
 
@@ -105,8 +107,11 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   if (!auto_sensors_created_ && !inv_data_.DeviceName.empty()) {
     std::string prefix = name_prefix_;
     if (prefix.empty()) {
-      // Use MAC address — always available, never changes between reboots
-      prefix = "SMA " + mac_string_;
+      // Use MAC address without colons — always available, never changes between reboots
+      // e.g. "SMA 0080251AF252" → entity_id: sma_0080251af252_voltage_l1
+      std::string mac_clean = mac_string_;
+      mac_clean.erase(std::remove(mac_clean.begin(), mac_clean.end(), ':'), mac_clean.end());
+      prefix = "SMA " + mac_clean;
     }
     pending_auto_sensor_prefix_ = prefix;
     pending_auto_sensors_ = true;
@@ -118,8 +123,8 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   // Query fast types (power, voltage, energy, frequency)
   for (int i = 0; i < NUM_FAST_TYPES; i++) {
     rc = get_inverter_data(hub, FAST_QUERY_TYPES[i]);
-    if (rc != E_OK && !is_ignorable_error(FAST_QUERY_TYPES[i])) {
-      ESP_LOGE(TAG, "[%s] Fast query %d failed: %d", mac_string_.c_str(),
+    if (rc != E_OK) {
+      ESP_LOGD(TAG, "[%s] Fast query %d failed: %d", mac_string_.c_str(),
                FAST_QUERY_TYPES[i], rc);
     }
     vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms()));
@@ -128,8 +133,8 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   // Query slow types (status, relay, temp)
   for (int i = 0; i < NUM_SLOW_TYPES; i++) {
     rc = get_inverter_data(hub, SLOW_QUERY_TYPES[i]);
-    if (rc != E_OK && !is_ignorable_error(SLOW_QUERY_TYPES[i])) {
-      ESP_LOGW(TAG, "[%s] Slow query %d failed: %d", mac_string_.c_str(),
+    if (rc != E_OK) {
+      ESP_LOGD(TAG, "[%s] Slow query %d failed: %d", mac_string_.c_str(),
                SLOW_QUERY_TYPES[i], rc);
     }
     vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms()));
@@ -457,24 +462,24 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
             inv_data_.SWVersion = std::string(inverter_version_);
             break;
           case NameplateModel: {
-            uint32_t attr = get_attribute(recptr);
+            uint32_t attr = get_attribute(recptr) & 0x00FFFFFF;  // strip data type byte
             inv_data_.DeviceType = attr;
             break;
           }
           case NameplateMainModel: {
-            uint32_t attr = get_attribute(recptr);
+            uint32_t attr = get_attribute(recptr) & 0x00FFFFFF;  // strip data type byte
             inv_data_.DeviceClass = attr;
             break;
           }
           case CoolsysTmpNom:
             inv_data_.InvTemp = value32_; disp_data_.InvTemp = toTemp(value32_); break;
           case OperationHealth: {
-            uint32_t attr = get_attribute(recptr);
+            uint32_t attr = get_attribute(recptr) & 0x00FFFFFF;  // strip data type byte
             inv_data_.DevStatus = attr;
             break;
           }
           case OperationGriSwStt: {
-            uint32_t attr = get_attribute(recptr);
+            uint32_t attr = get_attribute(recptr) & 0x00FFFFFF;  // strip data type byte
             inv_data_.GridRelay = attr;
             break;
           }
@@ -802,13 +807,9 @@ bool SmaInverterDevice::publish_sensors() {
   }
   publish_sensor(bt_signal_strength_, disp_data_.BTSigStrength);
 
-  // Only publish operation/feed-in time if non-zero (some models don't support it)
-  if (inv_data_.OperationTime > 0) {
-    publish_sensor(today_generation_time_, (float)inv_data_.OperationTime / 3600.0f);
-  }
-  if (inv_data_.FeedInTime > 0) {
-    publish_sensor(total_generation_time_, (float)inv_data_.FeedInTime / 3600.0f);
-  }
+  // Publish operation/feed-in time (0 is valid — inverter just started)
+  publish_sensor(today_generation_time_, (float)inv_data_.OperationTime / 3600.0f);
+  publish_sensor(total_generation_time_, (float)inv_data_.FeedInTime / 3600.0f);
   publish_sensor(wakeup_time_, (uint64_t)inv_data_.WakeupTime);
 
 #ifdef USE_TEXT_SENSOR

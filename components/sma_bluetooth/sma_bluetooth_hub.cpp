@@ -8,6 +8,8 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 
+#include <algorithm>
+
 namespace esphome {
 namespace sma_bluetooth {
 
@@ -734,7 +736,10 @@ void SmaBluetoothHub::pre_create_devices_() {
     if (!cfg->name.empty()) {
       prefix = cfg->name;
     } else {
-      prefix = "SMA " + cfg->mac_string;
+      // MAC without colons for clean entity IDs
+      std::string mac_clean = cfg->mac_string;
+      mac_clean.erase(std::remove(mac_clean.begin(), mac_clean.end(), ':'), mac_clean.end());
+      prefix = "SMA " + mac_clean;
     }
     dev->create_auto_sensors(prefix);
 
