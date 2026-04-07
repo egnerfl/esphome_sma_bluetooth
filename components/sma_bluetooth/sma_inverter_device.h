@@ -30,7 +30,11 @@ class SmaBluetoothHub;
 
 class DynamicSensor : public sensor::Sensor {
  public:
+#ifdef USE_DEVICES
   explicit DynamicSensor(const std::string &name, Device *device = nullptr)
+#else
+  explicit DynamicSensor(const std::string &name)
+#endif
       : owned_name_(strdup(name.c_str())) {
     this->configure_entity_(owned_name_, 0, 0);
 #ifdef USE_DEVICES
@@ -45,7 +49,11 @@ class DynamicSensor : public sensor::Sensor {
 #ifdef USE_TEXT_SENSOR
 class DynamicTextSensor : public text_sensor::TextSensor {
  public:
+#ifdef USE_DEVICES
   explicit DynamicTextSensor(const std::string &name, Device *device = nullptr)
+#else
+  explicit DynamicTextSensor(const std::string &name)
+#endif
       : owned_name_(strdup(name.c_str())) {
     this->configure_entity_(owned_name_, 0, 0);
 #ifdef USE_DEVICES
@@ -61,7 +69,11 @@ class DynamicTextSensor : public text_sensor::TextSensor {
 #ifdef USE_BINARY_SENSOR
 class DynamicBinarySensor : public binary_sensor::BinarySensor {
  public:
+#ifdef USE_DEVICES
   explicit DynamicBinarySensor(const std::string &name, Device *device = nullptr)
+#else
+  explicit DynamicBinarySensor(const std::string &name)
+#endif
       : owned_name_(strdup(name.c_str())) {
     this->configure_entity_(owned_name_, 0, 0);
 #ifdef USE_DEVICES
