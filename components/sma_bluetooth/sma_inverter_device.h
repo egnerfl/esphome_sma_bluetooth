@@ -6,6 +6,7 @@
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/core/entity_base.h"
 
 #include <string>
 
@@ -13,6 +14,38 @@ namespace esphome {
 namespace sma_bluetooth {
 
 class SmaBluetoothHub;
+
+// Wrapper subclasses for dynamic sensor creation at runtime.
+// ESPHome 2026.3+ removed public set_name(), so we access the protected
+// name_ member via subclassing. The name string must be heap-allocated
+// to outlive the sensor (StringRef holds a pointer).
+
+class DynamicSensor : public sensor::Sensor {
+ public:
+  explicit DynamicSensor(const std::string &name) : owned_name_(new std::string(name)) {
+    this->set_name(owned_name_->c_str());
+  }
+ protected:
+  std::unique_ptr<std::string> owned_name_;
+};
+
+class DynamicTextSensor : public text_sensor::TextSensor {
+ public:
+  explicit DynamicTextSensor(const std::string &name) : owned_name_(new std::string(name)) {
+    this->set_name(owned_name_->c_str());
+  }
+ protected:
+  std::unique_ptr<std::string> owned_name_;
+};
+
+class DynamicBinarySensor : public binary_sensor::BinarySensor {
+ public:
+  explicit DynamicBinarySensor(const std::string &name) : owned_name_(new std::string(name)) {
+    this->set_name(owned_name_->c_str());
+  }
+ protected:
+  std::unique_ptr<std::string> owned_name_;
+};
 
 class SmaInverterDevice {
  public:

@@ -243,8 +243,8 @@ void SmaBluetoothHub::gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_pa
       break;
 
     case ESP_BT_GAP_PIN_REQ_EVT: {
-      const uint8_t pin[] = {'0', '0', '0', '0'};
-      esp_bt_gap_pin_reply(param->pin_req.bda, true, 4, (esp_bt_pin_code_t *)pin);
+      esp_bt_pin_code_t pin = {'0', '0', '0', '0'};
+      esp_bt_gap_pin_reply(param->pin_req.bda, true, 4, pin);
       break;
     }
 

@@ -95,7 +95,7 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   // Query once-types (TypeLabel, SoftwareVersion)
   for (int i = 0; i < NUM_ONCE_TYPES; i++) {
     get_inverter_data(hub, ONCE_QUERY_TYPES[i]);
-    vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms_));
+    vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms()));
   }
 
   // Create auto-sensors after we have serial number
@@ -117,7 +117,7 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
       ESP_LOGE(TAG, "[%s] Fast query %d failed: %d", mac_string_.c_str(),
                FAST_QUERY_TYPES[i], rc);
     }
-    vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms_));
+    vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms()));
   }
 
   // Query slow types (status, relay, temp)
@@ -127,7 +127,7 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
       ESP_LOGW(TAG, "[%s] Slow query %d failed: %d", mac_string_.c_str(),
                SLOW_QUERY_TYPES[i], rc);
     }
-    vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms_));
+    vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms()));
   }
 
   // Compute derived values
@@ -812,8 +812,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   // Helper lambda to create a sensor if not already set
   auto make_sensor = [&](sensor::Sensor **target, const std::string &name) {
     if (*target == nullptr) {
-      auto *s = new sensor::Sensor();
-      s->set_name(name);
+      auto *s = new DynamicSensor(name);
       App.register_sensor(s);
       *target = s;
     }
@@ -821,8 +820,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
 
   auto make_text_sensor = [&](text_sensor::TextSensor **target, const std::string &name) {
     if (*target == nullptr) {
-      auto *s = new text_sensor::TextSensor();
-      s->set_name(name);
+      auto *s = new DynamicTextSensor(name);
       App.register_text_sensor(s);
       *target = s;
     }
@@ -830,8 +828,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
 
   auto make_binary_sensor = [&](binary_sensor::BinarySensor **target, const std::string &name) {
     if (*target == nullptr) {
-      auto *s = new binary_sensor::BinarySensor();
-      s->set_name(name);
+      auto *s = new DynamicBinarySensor(name);
       App.register_binary_sensor(s);
       *target = s;
     }

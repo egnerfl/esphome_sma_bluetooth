@@ -77,6 +77,7 @@ class SmaBluetoothHub : public Component {
   void trigger_discovery();
 
   const std::vector<std::string> &get_passwords() const { return passwords_; }
+  uint32_t query_delay_ms() const { return query_delay_ms_; }
 
  protected:
   // Static callbacks (BT stack context)
