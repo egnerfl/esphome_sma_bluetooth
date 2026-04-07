@@ -80,3 +80,10 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BT_SPP_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
+
+    # Bump entity capacities — autodiscovery creates ~22 sensors + 6 text + 1 binary
+    # per inverter, so 10 inverters need headroom.
+    cg.add_define("ESPHOME_SENSOR_COUNT", 100)
+    cg.add_define("ESPHOME_TEXT_SENSOR_COUNT", 30)
+    cg.add_define("ESPHOME_BINARY_SENSOR_COUNT", 20)
+    cg.add_define("ESPHOME_DEVICE_COUNT", 15)

@@ -12,6 +12,9 @@
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #endif
 #include "esphome/core/entity_base.h"
+#ifdef USE_DEVICES
+#include "esphome/core/device.h"
+#endif
 
 #include <string>
 
@@ -21,15 +24,18 @@ namespace sma_bluetooth {
 class SmaBluetoothHub;
 
 // Wrapper subclasses for dynamic sensor creation at runtime.
-// ESPHome 2026.3+ removed public set_name(), so we access the protected
-// name_ member via subclassing. The name string must be heap-allocated
-// to outlive the sensor (StringRef holds a pointer).
+// Uses configure_entity_() (protected, accessible from subclass) to set name
+// and compute the object_id_hash needed for HA entity discovery.
+// Optionally assigns sensors to an ESPHome Device for sub-device support.
 
 class DynamicSensor : public sensor::Sensor {
  public:
-  explicit DynamicSensor(const std::string &name) : owned_name_(strdup(name.c_str())) {
-    this->name_ = StringRef(owned_name_);
-    this->flags_.has_own_name = true;
+  explicit DynamicSensor(const std::string &name, Device *device = nullptr)
+      : owned_name_(strdup(name.c_str())) {
+    this->configure_entity_(owned_name_, 0, 0);
+#ifdef USE_DEVICES
+    if (device) this->set_device_(device);
+#endif
   }
   ~DynamicSensor() { free(owned_name_); }
  protected:
@@ -39,9 +45,12 @@ class DynamicSensor : public sensor::Sensor {
 #ifdef USE_TEXT_SENSOR
 class DynamicTextSensor : public text_sensor::TextSensor {
  public:
-  explicit DynamicTextSensor(const std::string &name) : owned_name_(strdup(name.c_str())) {
-    this->name_ = StringRef(owned_name_);
-    this->flags_.has_own_name = true;
+  explicit DynamicTextSensor(const std::string &name, Device *device = nullptr)
+      : owned_name_(strdup(name.c_str())) {
+    this->configure_entity_(owned_name_, 0, 0);
+#ifdef USE_DEVICES
+    if (device) this->set_device_(device);
+#endif
   }
   ~DynamicTextSensor() { free(owned_name_); }
  protected:
@@ -52,9 +61,12 @@ class DynamicTextSensor : public text_sensor::TextSensor {
 #ifdef USE_BINARY_SENSOR
 class DynamicBinarySensor : public binary_sensor::BinarySensor {
  public:
-  explicit DynamicBinarySensor(const std::string &name) : owned_name_(strdup(name.c_str())) {
-    this->name_ = StringRef(owned_name_);
-    this->flags_.has_own_name = true;
+  explicit DynamicBinarySensor(const std::string &name, Device *device = nullptr)
+      : owned_name_(strdup(name.c_str())) {
+    this->configure_entity_(owned_name_, 0, 0);
+#ifdef USE_DEVICES
+    if (device) this->set_device_(device);
+#endif
   }
   ~DynamicBinarySensor() { free(owned_name_); }
  protected:
@@ -246,6 +258,10 @@ class SmaInverterDevice {
 
   // Flag: auto-sensors created (to avoid duplicating)
   bool auto_sensors_created_{false};
+
+#ifdef USE_DEVICES
+  Device *ha_device_{nullptr};
+#endif
 };
 
 }  // namespace sma_bluetooth

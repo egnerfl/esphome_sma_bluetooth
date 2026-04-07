@@ -4,6 +4,7 @@
 #include "sma_bluetooth_hub.h"
 #include "esphome/core/defines.h"
 #include "esphome/core/application.h"
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
 namespace esphome {
@@ -817,10 +818,25 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
 
   ESP_LOGI(TAG, "Creating auto-sensors for '%s'", prefix.c_str());
 
+#ifdef USE_DEVICES
+  // Create a sub-device for this inverter so it appears as a separate device in HA
+  auto *dev = new Device();
+  char *dev_name = strdup(prefix.c_str());
+  dev->set_name(dev_name);
+  dev->set_device_id(fnv1_hash(mac_string_));
+  App.register_device(dev);
+  ha_device_ = dev;
+  ESP_LOGI(TAG, "Registered sub-device '%s' (id=0x%08X)", prefix.c_str(), fnv1_hash(mac_string_));
+#endif
+
   // Helper lambda to create a sensor if not already set
   auto make_sensor = [&](sensor::Sensor **target, const std::string &name) {
     if (*target == nullptr) {
-      auto *s = new DynamicSensor(name);
+      auto *s = new DynamicSensor(name
+#ifdef USE_DEVICES
+          , ha_device_
+#endif
+      );
       App.register_sensor(s);
       *target = s;
     }
@@ -856,7 +872,11 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   {
     auto make_ts = [&](text_sensor::TextSensor **target, const std::string &name) {
       if (*target == nullptr) {
-        auto *s = new DynamicTextSensor(name);
+        auto *s = new DynamicTextSensor(name
+#ifdef USE_DEVICES
+            , ha_device_
+#endif
+        );
         App.register_text_sensor(s);
         *target = s;
       }
@@ -872,7 +892,11 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   // Binary sensor
 #ifdef USE_BINARY_SENSOR
   if (grid_relay_ == nullptr) {
-    auto *s = new DynamicBinarySensor(prefix + " Grid Relay");
+    auto *s = new DynamicBinarySensor(prefix + " Grid Relay"
+#ifdef USE_DEVICES
+        , ha_device_
+#endif
+    );
     App.register_binary_sensor(s);
     grid_relay_ = s;
   }
