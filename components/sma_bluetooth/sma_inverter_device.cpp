@@ -2,6 +2,7 @@
 
 #include "sma_inverter_device.h"
 #include "sma_bluetooth_hub.h"
+#include "esphome/core/defines.h"
 #include "esphome/core/application.h"
 #include "esphome/core/log.h"
 
