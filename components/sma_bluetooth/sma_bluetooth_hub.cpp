@@ -65,40 +65,24 @@ void SmaBluetoothHub::loop() {
   }
 
   // If new auto-sensors were just created at runtime, don't reboot immediately.
-  // Wait until ALL registered devices have been polled at least once (so all
-  // get serial-based names), or until a timeout expires.
-  if (new_sensors_created && !reboot_pending_) {
+  // Wait until the BT task finishes one full poll cycle — that ensures every
+  // discovered device has had a chance to be polled and get its serial number.
+  // We don't know how many inverters will be discovered, so we can't count them;
+  // we just wait for one complete pass through the device list.
+  if (new_sensors_created) {
     reboot_pending_ = true;
-    reboot_defer_start_ms_ = millis();
-    ESP_LOGI(TAG, "New sensors created — waiting for all inverters to be polled before rebooting...");
+    poll_cycle_complete_ = false;  // clear stale signal from previous cycle
+    ESP_LOGI(TAG, "New sensors created — will reboot after current poll cycle completes...");
   }
 
-  if (reboot_pending_) {
-    // Check if all devices have been polled (last_poll_ms != 0 means polled at least once)
-    bool all_polled = true;
-    for (auto *device : devices_) {
-      if (device->last_poll_ms() == 0) {
-        all_polled = false;
-        break;
-      }
-    }
-
-    uint32_t elapsed = millis() - reboot_defer_start_ms_;
-
-    if (all_polled || elapsed > 5 * 60 * 1000) {  // all polled or 5-min timeout
-      save_cached_inverters_();
-      if (all_polled) {
-        ESP_LOGW(TAG, "All %d inverters polled — rebooting in 3s so Home Assistant discovers them...",
-                 (int)devices_.size());
-      } else {
-        ESP_LOGW(TAG, "Reboot timeout (5 min) — rebooting with %d device(s) polled...",
-                 (int)devices_.size());
-      }
-      reboot_pending_ = false;
-      this->set_timeout("reboot_for_sensors", 3000, []() {
-        App.safe_reboot();
-      });
-    }
+  if (reboot_pending_ && poll_cycle_complete_) {
+    poll_cycle_complete_ = false;
+    reboot_pending_ = false;
+    save_cached_inverters_();
+    ESP_LOGW(TAG, "Poll cycle complete — rebooting in 3s so Home Assistant discovers all sensors...");
+    this->set_timeout("reboot_for_sensors", 3000, []() {
+      App.safe_reboot();
+    });
   }
 
   // Monitor task health
@@ -616,6 +600,13 @@ void SmaBluetoothHub::bt_task_loop() {
       if (!stop_task_) {
         vTaskDelay(pdMS_TO_TICKS(inter_inverter_delay_ms_));
       }
+    }
+
+    // Signal main loop that one full pass through all devices is done.
+    // Only signal if at least one device was actually polled successfully
+    // (at night all inverters are off, so polls fail — don't signal then).
+    if (any_polled) {
+      poll_cycle_complete_ = true;
     }
 
     if (!any_polled) {
