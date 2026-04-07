@@ -82,11 +82,15 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
 
-    # Reserve StaticVector capacity for runtime-created sensors.
+    # Enable sub-device support so each inverter appears as a separate
+    # device in Home Assistant (requires ESPHome >= 2025.7.0).
+    cg.add_define("USE_DEVICES")
+    cg.add_define("ESPHOME_DEVICE_COUNT", 15)
+
+    # Reserve StaticVector capacity for runtime-created entities.
     # Autodiscovery creates ~22 sensors + 6 text + 1 binary per inverter.
     # We inflate the platform counts so ESPHome's auto-generated
     # ESPHOME_ENTITY_*_COUNT defines include headroom for up to 10 inverters.
-    # (register_platform_component increments the counter that sizes the StaticVector)
     for _ in range(220):  # 22 sensors x 10 inverters
         CORE.register_platform_component("sensor", None)
     for _ in range(60):   # 6 text sensors x 10 inverters

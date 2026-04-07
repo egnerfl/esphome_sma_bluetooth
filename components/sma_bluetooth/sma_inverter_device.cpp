@@ -834,20 +834,23 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   auto *dev = new Device();
   char *dev_name = strdup(prefix.c_str());
   dev->set_name(dev_name);
-  dev->set_device_id(fnv1_hash(mac_string_));
+  dev->set_device_id(fnv1a_hash(mac_string_));
   App.register_device(dev);
   ha_device_ = dev;
-  ESP_LOGI(TAG, "Registered sub-device '%s' (id=0x%08X)", prefix.c_str(), fnv1_hash(mac_string_));
+  ESP_LOGI(TAG, "Registered sub-device '%s' (id=0x%08X)", prefix.c_str(), fnv1a_hash(mac_string_));
 #endif
 
   // Helper lambda to create a sensor if not already set
   auto make_sensor = [&](sensor::Sensor **target, const std::string &name) {
     if (*target == nullptr) {
+#ifdef USE_DEVICES
+      auto *s = new DynamicSensor(name, ha_device_);
+#else
       auto *s = new DynamicSensor(name);
+#endif
       App.register_sensor(s);
       *target = s;
-      ESP_LOGD(TAG, "  Sensor '%s' key=0x%08X hash=%u", name.c_str(),
-               s->get_object_id_hash(), s->get_object_id_hash());
+      ESP_LOGD(TAG, "  Sensor '%s' key=0x%08X", name.c_str(), s->get_object_id_hash());
     }
   };
 
@@ -881,7 +884,11 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   {
     auto make_ts = [&](text_sensor::TextSensor **target, const std::string &name) {
       if (*target == nullptr) {
+#ifdef USE_DEVICES
+        auto *s = new DynamicTextSensor(name, ha_device_);
+#else
         auto *s = new DynamicTextSensor(name);
+#endif
         App.register_text_sensor(s);
         *target = s;
         ESP_LOGD(TAG, "  TextSensor '%s' key=0x%08X", name.c_str(), s->get_object_id_hash());
@@ -899,7 +906,11 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
 #ifdef USE_BINARY_SENSOR
   if (grid_relay_ == nullptr) {
     std::string relay_name = prefix + " Grid Relay";
+#ifdef USE_DEVICES
+    auto *s = new DynamicBinarySensor(relay_name, ha_device_);
+#else
     auto *s = new DynamicBinarySensor(relay_name);
+#endif
     App.register_binary_sensor(s);
     grid_relay_ = s;
     ESP_LOGD(TAG, "  BinarySensor '%s' key=0x%08X", relay_name.c_str(),
