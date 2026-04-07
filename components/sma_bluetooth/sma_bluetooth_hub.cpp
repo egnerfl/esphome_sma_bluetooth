@@ -458,10 +458,8 @@ SmaInverterDevice *SmaBluetoothHub::create_discovered_device(const uint8_t mac[6
     }
   }
 
-  // If no name prefix set, use BT name
-  if (dev->name_prefix().empty()) {
-    dev->set_name_prefix(bt_name);
-  }
+  // If no name prefix set from user config, leave it empty.
+  // poll() will use serial number once it's known.
 
   register_device(dev);
   return dev;
