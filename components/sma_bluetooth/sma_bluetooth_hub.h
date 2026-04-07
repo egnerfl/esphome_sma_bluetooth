@@ -24,10 +24,17 @@ namespace sma_bluetooth {
 class SmaInverterDevice;  // forward
 
 struct InverterConfig {
-  uint8_t     mac[6];
+  uint8_t     mac[6]{};
   std::string mac_string;
   std::string name;       // friendly name prefix for sensors
   std::string password;   // per-inverter override (empty = use defaults)
+
+  void parse_mac_from_string() {
+    if (mac_string.size() >= 17) {
+      sscanf(mac_string.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+             &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]);
+    }
+  }
 };
 
 struct DiscoveredDevice {
@@ -47,7 +54,10 @@ class SmaBluetoothHub : public Component {
   void set_query_delay_ms(uint32_t v) { query_delay_ms_ = v; }
   void set_inter_inverter_delay_ms(uint32_t v) { inter_inverter_delay_ms_ = v; }
   void add_password(const std::string &pw) { passwords_.push_back(pw); }
-  void add_inverter_config(const InverterConfig &entry) { inverter_configs_.push_back(entry); }
+  void add_inverter_config(InverterConfig entry) {
+    entry.parse_mac_from_string();
+    inverter_configs_.push_back(entry);
+  }
 
   // Device registration
   void register_device(SmaInverterDevice *device);

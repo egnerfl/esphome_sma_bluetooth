@@ -44,14 +44,6 @@ CONFIG_SCHEMA = cv.Schema(
 ).extend(cv.COMPONENT_SCHEMA)
 
 
-def _parse_mac(mac_str):
-    """Parse MAC string into list of 6 ints."""
-    parts = mac_str.split(":")
-    if len(parts) != 6:
-        raise cv.Invalid(f"Invalid MAC address: {mac_str}")
-    return [int(p, 16) for p in parts]
-
-
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
@@ -72,19 +64,19 @@ async def to_code(config):
 
     if CONF_INVERTERS in config:
         for entry in config[CONF_INVERTERS]:
-            mac_bytes = _parse_mac(entry[CONF_MAC_ADDRESS])
             inv_cfg = cg.StructInitializer(
                 InverterConfig,
-                ("mac", mac_bytes),
                 ("mac_string", entry[CONF_MAC_ADDRESS]),
                 ("name", entry.get(CONF_NAME, "")),
                 ("password", entry.get(CONF_PASSWORD, "")),
             )
             cg.add(var.add_inverter_config(inv_cfg))
 
-    # Required sdkconfig options for BT Classic
-    if cg.CORE.using_esp_idf:
-        cg.add_define("CONFIG_BT_ENABLED")
-        cg.add_define("CONFIG_BT_BLUEDROID_ENABLED")
-        cg.add_define("CONFIG_BT_CLASSIC_ENABLED")
-        cg.add_define("CONFIG_BT_SPP_ENABLED")
+    # Add BT Classic sdkconfig options for ESP-IDF
+    from esphome.components.esp32 import add_idf_sdkconfig_option
+    add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)
+    add_idf_sdkconfig_option("CONFIG_BT_BLUEDROID_ENABLED", True)
+    add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLED", True)
+    add_idf_sdkconfig_option("CONFIG_BT_SPP_ENABLED", True)
+    add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY", True)
+    add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
