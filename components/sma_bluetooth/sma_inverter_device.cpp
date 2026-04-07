@@ -826,26 +826,6 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
     }
   };
 
-  auto make_text_sensor = [&](text_sensor::TextSensor **target, const std::string &name) {
-#ifdef USE_TEXT_SENSOR
-    if (*target == nullptr) {
-      auto *s = new DynamicTextSensor(name);
-      App.register_text_sensor(s);
-      *target = s;
-    }
-#endif
-  };
-
-  auto make_binary_sensor = [&](binary_sensor::BinarySensor **target, const std::string &name) {
-#ifdef USE_BINARY_SENSOR
-    if (*target == nullptr) {
-      auto *s = new DynamicBinarySensor(name);
-      App.register_binary_sensor(s);
-      *target = s;
-    }
-#endif
-  };
-
   // AC phase sensors
   for (int i = 0; i < 3; i++) {
     char phase = 'A' + i;
@@ -873,16 +853,29 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
 
   // Text sensors
 #ifdef USE_TEXT_SENSOR
-  make_text_sensor(&status_text_sensor_, prefix + " Status");
-  make_text_sensor(&serial_number_, prefix + " Serial");
-  make_text_sensor(&software_version_, prefix + " Software Version");
-  make_text_sensor(&device_type_, prefix + " Device Type");
-  make_text_sensor(&device_class_, prefix + " Device Class");
+  {
+    auto make_ts = [&](text_sensor::TextSensor **target, const std::string &name) {
+      if (*target == nullptr) {
+        auto *s = new DynamicTextSensor(name);
+        App.register_text_sensor(s);
+        *target = s;
+      }
+    };
+    make_ts(&status_text_sensor_, prefix + " Status");
+    make_ts(&serial_number_, prefix + " Serial");
+    make_ts(&software_version_, prefix + " Software Version");
+    make_ts(&device_type_, prefix + " Device Type");
+    make_ts(&device_class_, prefix + " Device Class");
+  }
 #endif
 
   // Binary sensor
 #ifdef USE_BINARY_SENSOR
-  make_binary_sensor(&grid_relay_, prefix + " Grid Relay");
+  if (grid_relay_ == nullptr) {
+    auto *s = new DynamicBinarySensor(prefix + " Grid Relay");
+    App.register_binary_sensor(s);
+    grid_relay_ = s;
+  }
 #endif
 }
 

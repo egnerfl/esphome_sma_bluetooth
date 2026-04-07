@@ -23,9 +23,7 @@ ESPHome external component for reading data from SMA solar inverters via Bluetoo
 
 ```yaml
 external_components:
-  - source:
-      type: git
-      url: https://github.com/egnerfl/esphome_sma_bluetooth
+  - source: github://egnerfl/esphome_sma_bluetooth
     components: [sma_bluetooth]
 
 sma_bluetooth:
@@ -85,20 +83,13 @@ See `examples/` for more configurations.
 
 ## ESP32 Configuration
 
-Your YAML must include ESP-IDF with Bluetooth Classic enabled:
+Your YAML must use the ESP-IDF framework (BT Classic sdkconfig options are set automatically by the component):
 
 ```yaml
 esp32:
   board: esp32dev
   framework:
     type: esp-idf
-    sdkconfig_options:
-      CONFIG_BT_ENABLED: "y"
-      CONFIG_BT_BLUEDROID_ENABLED: "y"
-      CONFIG_BT_CLASSIC_ENABLED: "y"
-      CONFIG_BT_SPP_ENABLED: "y"
-      CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY: "y"
-      CONFIG_BT_BLE_ENABLED: "n"
 ```
 
 ## Hub Configuration
