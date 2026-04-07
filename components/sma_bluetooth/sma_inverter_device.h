@@ -22,29 +22,35 @@ class SmaBluetoothHub;
 
 class DynamicSensor : public sensor::Sensor {
  public:
-  explicit DynamicSensor(const std::string &name) : owned_name_(new std::string(name)) {
-    this->set_name(owned_name_->c_str());
+  explicit DynamicSensor(const std::string &name) : owned_name_(strdup(name.c_str())) {
+    this->name_ = StringRef(owned_name_);
+    this->flags_.has_own_name = true;
   }
+  ~DynamicSensor() { free(owned_name_); }
  protected:
-  std::unique_ptr<std::string> owned_name_;
+  char *owned_name_;
 };
 
 class DynamicTextSensor : public text_sensor::TextSensor {
  public:
-  explicit DynamicTextSensor(const std::string &name) : owned_name_(new std::string(name)) {
-    this->set_name(owned_name_->c_str());
+  explicit DynamicTextSensor(const std::string &name) : owned_name_(strdup(name.c_str())) {
+    this->name_ = StringRef(owned_name_);
+    this->flags_.has_own_name = true;
   }
+  ~DynamicTextSensor() { free(owned_name_); }
  protected:
-  std::unique_ptr<std::string> owned_name_;
+  char *owned_name_;
 };
 
 class DynamicBinarySensor : public binary_sensor::BinarySensor {
  public:
-  explicit DynamicBinarySensor(const std::string &name) : owned_name_(new std::string(name)) {
-    this->set_name(owned_name_->c_str());
+  explicit DynamicBinarySensor(const std::string &name) : owned_name_(strdup(name.c_str())) {
+    this->name_ = StringRef(owned_name_);
+    this->flags_.has_own_name = true;
   }
+  ~DynamicBinarySensor() { free(owned_name_); }
  protected:
-  std::unique_ptr<std::string> owned_name_;
+  char *owned_name_;
 };
 
 class SmaInverterDevice {
