@@ -815,6 +815,15 @@ bool SmaInverterDevice::publish_sensors() {
   publish_sensor(phases_[2].current, disp_data_.Iac3);
   publish_sensor(phases_[2].active_power, (float)inv_data_.Pac3);  // W (not kW)
 
+  // Total AC power: use TotalPac if available, otherwise sum per-phase
+  {
+    float total_w = (float)inv_data_.TotalPac;
+    if (total_w == 0.0f) {
+      total_w = (float)(inv_data_.Pac1 + inv_data_.Pac2 + inv_data_.Pac3);
+    }
+    publish_sensor(total_ac_power_, total_w);
+  }
+
   // Only publish temperature if inverter supports it (non-zero)
   if (disp_data_.InvTemp > 0.0f) {
     publish_sensor(inverter_module_temp_, disp_data_.InvTemp);
@@ -920,6 +929,8 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   }
 
   // Scalar sensors
+  make_sensor(&total_ac_power_, "Power",
+              power_fields, sensor::STATE_CLASS_MEASUREMENT, 0);
   make_sensor(&grid_frequency_sensor_, "Grid Frequency",
               freq_fields, sensor::STATE_CLASS_MEASUREMENT, 2);
   make_sensor(&today_production_, "Energy Today",

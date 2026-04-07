@@ -256,6 +256,7 @@ class SmaInverterDevice {
     sensor::Sensor *active_power{nullptr};
   } pvs_[2];
 
+  sensor::Sensor *total_ac_power_{nullptr};
   sensor::Sensor *grid_frequency_sensor_{nullptr};
   sensor::Sensor *today_production_{nullptr};
   sensor::Sensor *total_energy_production_{nullptr};
