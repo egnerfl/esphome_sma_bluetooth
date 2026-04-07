@@ -135,15 +135,23 @@ void test_to_kw() {
 // ============================================================
 
 void test_lookup_known_code() {
-    TEST_ASSERT_EQUAL_STRING("OK", lookup_status_code(307));
+    TEST_ASSERT_EQUAL_STRING("OK", lookup_status_code(307).c_str());
 }
 
 void test_lookup_closed() {
-    TEST_ASSERT_EQUAL_STRING("Closed", lookup_status_code(51));
+    TEST_ASSERT_EQUAL_STRING("Closed", lookup_status_code(51).c_str());
 }
 
 void test_lookup_unknown_code() {
-    TEST_ASSERT_EQUAL_STRING("Unknown", lookup_status_code(9999));
+    TEST_ASSERT_EQUAL_STRING("Code 9999", lookup_status_code(9999).c_str());
+}
+
+void test_lookup_device_type() {
+    TEST_ASSERT_EQUAL_STRING("SB 1600TL-10", lookup_status_code(9109).c_str());
+}
+
+void test_lookup_device_class() {
+    TEST_ASSERT_EQUAL_STRING("Solar Inverters", lookup_status_code(8001).c_str());
 }
 
 // ============================================================
@@ -250,6 +258,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_lookup_known_code);
     RUN_TEST(test_lookup_closed);
     RUN_TEST(test_lookup_unknown_code);
+    RUN_TEST(test_lookup_device_type);
+    RUN_TEST(test_lookup_device_class);
 
     // Version
     RUN_TEST(test_get_version);

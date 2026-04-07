@@ -168,14 +168,14 @@ void SmaBluetoothHub::spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t 
 
   switch (event) {
     case ESP_SPP_INIT_EVT:
-      ESP_LOGI(TAG, "SPP_INIT_EVT status=%d", param->init.status);
+      ESP_LOGD(TAG, "SPP_INIT_EVT status=%d", param->init.status);
       xEventGroupSetBits(self->bt_event_group_, BT_EVT_SPP_INIT);
       break;
 
     case ESP_SPP_DISCOVERY_COMP_EVT:
       if (param->disc_comp.status == ESP_SPP_SUCCESS && param->disc_comp.scn_num > 0) {
         self->discovered_scn_ = param->disc_comp.scn[0];
-        ESP_LOGI(TAG, "SPP discovery: SCN=%d", self->discovered_scn_);
+        ESP_LOGD(TAG, "SPP discovery: SCN=%d", self->discovered_scn_);
       } else {
         self->discovered_scn_ = 1;  // fallback
         ESP_LOGW(TAG, "SPP discovery failed, using SCN=1");
@@ -187,7 +187,7 @@ void SmaBluetoothHub::spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t 
       if (param->open.status == ESP_SPP_SUCCESS) {
         self->spp_handle_ = param->open.handle;
         self->bt_connected_ = true;
-        ESP_LOGI(TAG, "SPP connected, handle=%lu", (unsigned long)self->spp_handle_);
+        ESP_LOGD(TAG, "SPP connected, handle=%lu", (unsigned long)self->spp_handle_);
       } else {
         ESP_LOGE(TAG, "SPP open failed: %d", param->open.status);
         self->bt_connected_ = false;
@@ -198,7 +198,7 @@ void SmaBluetoothHub::spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t 
     case ESP_SPP_CLOSE_EVT:
       self->bt_connected_ = false;
       self->spp_handle_ = 0;
-      ESP_LOGI(TAG, "SPP disconnected");
+      ESP_LOGD(TAG, "SPP disconnected");
       xEventGroupSetBits(self->bt_event_group_, BT_EVT_DISCONNECTED);
       break;
 
@@ -239,7 +239,7 @@ void SmaBluetoothHub::gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_pa
           (dev.name[0] == 'S' || dev.name[0] == 's') &&
           (dev.name[1] == 'M' || dev.name[1] == 'm') &&
           (dev.name[2] == 'A' || dev.name[2] == 'a')) {
-        ESP_LOGI(TAG, "Discovered SMA device: %s [%02X:%02X:%02X:%02X:%02X:%02X]",
+        ESP_LOGD(TAG, "Discovered SMA device: %s [%02X:%02X:%02X:%02X:%02X:%02X]",
                  dev.name.c_str(),
                  dev.mac[0], dev.mac[1], dev.mac[2],
                  dev.mac[3], dev.mac[4], dev.mac[5]);
@@ -250,7 +250,7 @@ void SmaBluetoothHub::gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_pa
 
     case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
       if (param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STOPPED) {
-        ESP_LOGI(TAG, "GAP discovery completed, found %d SMA device(s)",
+        ESP_LOGD(TAG, "GAP discovery completed, found %d SMA device(s)",
                  (int)self->discovered_.size());
         self->discovery_complete_ = true;
       }
@@ -258,7 +258,7 @@ void SmaBluetoothHub::gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_pa
 
     case ESP_BT_GAP_AUTH_CMPL_EVT:
       if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
-        ESP_LOGI(TAG, "BT auth success: %s", param->auth_cmpl.device_name);
+        ESP_LOGD(TAG, "BT auth success: %s", param->auth_cmpl.device_name);
       } else {
         ESP_LOGW(TAG, "BT auth failed: status=%d", param->auth_cmpl.stat);
       }
@@ -320,7 +320,7 @@ bool SmaBluetoothHub::spp_connect(const uint8_t mac[6]) {
   bt_flush_rx();
 
   // Phase 1: SPP service discovery
-  ESP_LOGI(TAG, "SPP discovery for %02X:%02X:%02X:%02X:%02X:%02X",
+  ESP_LOGD(TAG, "SPP discovery for %02X:%02X:%02X:%02X:%02X:%02X",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
   esp_err_t err = esp_spp_start_discovery((uint8_t *)mac);
@@ -337,7 +337,7 @@ bool SmaBluetoothHub::spp_connect(const uint8_t mac[6]) {
   }
 
   // Phase 2: SPP connect
-  ESP_LOGI(TAG, "SPP connecting, SCN=%d", discovered_scn_);
+  ESP_LOGD(TAG, "SPP connecting, SCN=%d", discovered_scn_);
   xEventGroupClearBits(bt_event_group_, BT_EVT_CONNECTED | BT_EVT_DISCONNECTED);
 
   err = esp_spp_connect(ESP_SPP_SEC_AUTHENTICATE, ESP_SPP_ROLE_MASTER,
@@ -354,7 +354,7 @@ bool SmaBluetoothHub::spp_connect(const uint8_t mac[6]) {
     return false;
   }
 
-  ESP_LOGI(TAG, "SPP connected");
+  ESP_LOGD(TAG, "SPP connected");
   bt_flush_rx();
   return true;
 }
@@ -377,7 +377,7 @@ void SmaBluetoothHub::run_discovery_scan() {
   discovered_.clear();
   discovery_complete_ = false;
 
-  ESP_LOGI(TAG, "Starting GAP discovery scan...");
+  ESP_LOGD(TAG, "Starting GAP discovery scan...");
   esp_err_t err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 10, 0);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "gap_start_discovery: %s", esp_err_to_name(err));
@@ -399,7 +399,7 @@ void SmaBluetoothHub::run_discovery_scan() {
   for (const auto &disc : discovered_) {
     // Check configured inverters list
     if (!inverter_configs_.empty() && !is_configured(disc.mac)) {
-      ESP_LOGI(TAG, "Skipping %s (not in inverters list)", disc.name.c_str());
+      ESP_LOGD(TAG, "Skipping %s (not in inverters list)", disc.name.c_str());
       continue;
     }
 
@@ -412,7 +412,7 @@ void SmaBluetoothHub::run_discovery_scan() {
     // Create new device
     auto *dev = create_discovered_device(disc.mac, disc.name);
     if (dev) {
-      ESP_LOGI(TAG, "Auto-registered device: %s", disc.name.c_str());
+      ESP_LOGD(TAG, "Auto-registered device: %s", disc.name.c_str());
     }
   }
 }
@@ -499,7 +499,7 @@ void SmaBluetoothHub::bt_task_entry(void *param) {
 void SmaBluetoothHub::bt_task_loop() {
   static const char *TTAG = "sma_bt_task";
 
-  ESP_LOGI(TTAG, "BT task started, waiting for SPP init...");
+  ESP_LOGD(TTAG, "BT task started, waiting for SPP init...");
 
   // Wait for SPP stack ready
   EventBits_t bits = xEventGroupWaitBits(bt_event_group_, BT_EVT_SPP_INIT,
@@ -512,13 +512,13 @@ void SmaBluetoothHub::bt_task_loop() {
     return;
   }
 
-  ESP_LOGI(TTAG, "SPP ready. Starting main loop.");
+  ESP_LOGI(TTAG, "SPP ready, starting poll loop");
   uint32_t last_discovery_ms = 0;
 
   while (!stop_task_) {
     // Night mode check
     if (is_nighttime()) {
-      ESP_LOGI(TTAG, "Night mode, sleeping 30 min");
+      ESP_LOGD(TTAG, "Night mode, sleeping 30 min");
       vTaskDelay(pdMS_TO_TICKS(30 * 60 * 1000));
       continue;
     }
@@ -534,7 +534,7 @@ void SmaBluetoothHub::bt_task_loop() {
 
     // No devices? Wait and retry
     if (devices_.empty()) {
-      ESP_LOGI(TTAG, "No devices registered, waiting 30s...");
+      ESP_LOGD(TTAG, "No devices registered, waiting 30s...");
       vTaskDelay(pdMS_TO_TICKS(30000));
       continue;
     }
@@ -561,14 +561,14 @@ void SmaBluetoothHub::bt_task_loop() {
         }
       }
 
-      ESP_LOGI(TTAG, "Polling %s...", device->mac_string().c_str());
+      ESP_LOGD(TTAG, "Polling %s...", device->mac_string().c_str());
 
       bool ok = device->poll(this);
       device->set_last_poll_ms(xTaskGetTickCount() * portTICK_PERIOD_MS);
 
       if (ok) {
         device->reset_errors();
-        ESP_LOGI(TTAG, "Poll OK for %s", device->mac_string().c_str());
+        ESP_LOGD(TTAG, "Poll OK for %s", device->mac_string().c_str());
       } else {
         device->increment_errors();
         ESP_LOGW(TTAG, "Poll FAILED for %s (errors: %u)",
@@ -626,7 +626,7 @@ void SmaBluetoothHub::save_cached_inverters_() {
 
   nvs_commit(handle);
   nvs_close(handle);
-  ESP_LOGI(TAG, "Cached %u inverter(s) to NVS", count);
+  ESP_LOGD(TAG, "Cached %u inverter(s) to NVS", count);
 }
 
 void SmaBluetoothHub::restore_cached_inverters_() {
@@ -644,7 +644,7 @@ void SmaBluetoothHub::restore_cached_inverters_() {
     return;
   }
 
-  ESP_LOGI(TAG, "NVS: found %u cached inverter(s)", count);
+  ESP_LOGD(TAG, "NVS: found %u cached inverter(s)", count);
 
   for (uint8_t i = 0; i < count; i++) {
     char key_mac[16], key_name[16], key_serial[16];
@@ -669,7 +669,7 @@ void SmaBluetoothHub::restore_cached_inverters_() {
       cfg.serial = serial;
       cfg.parse_mac_from_string();
       cached_inverter_configs_.push_back(cfg);
-      ESP_LOGI(TAG, "  Restored cached inverter[%u]: '%s' (%s) serial=%lu",
+      ESP_LOGD(TAG, "  Restored cached inverter[%u]: '%s' (%s) serial=%lu",
                i, name_buf, mac_buf, (unsigned long)serial);
     } else {
       ESP_LOGW(TAG, "  NVS read failed for inverter[%u]: mac=%s name=%s", i,
@@ -689,7 +689,7 @@ void SmaBluetoothHub::pre_create_devices_() {
   // Configured entries take priority; cached ones fill in the rest.
   std::vector<InverterConfig *> to_create;
 
-  ESP_LOGI(TAG, "pre_create_devices_: %d configured, %d cached",
+  ESP_LOGD(TAG, "pre_create_devices_: %d configured, %d cached",
            (int)inverter_configs_.size(), (int)cached_inverter_configs_.size());
 
   for (auto &cfg : inverter_configs_) {
@@ -710,7 +710,7 @@ void SmaBluetoothHub::pre_create_devices_() {
     }
   }
 
-  ESP_LOGI(TAG, "pre_create_devices_: will create %d device(s)", (int)to_create.size());
+  ESP_LOGD(TAG, "pre_create_devices_: will create %d device(s)", (int)to_create.size());
 
   for (auto *cfg : to_create) {
     // Create the device
@@ -731,7 +731,7 @@ void SmaBluetoothHub::pre_create_devices_() {
     dev->create_auto_sensors(prefix);
 
     register_device(dev);
-    ESP_LOGW(TAG, "Pre-created device + sensors: '%s' (%s) — sensors registered in App",
+    ESP_LOGI(TAG, "Pre-created device + sensors: '%s' (%s)",
              prefix.c_str(), cfg->mac_string.c_str());
   }
 }

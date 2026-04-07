@@ -125,17 +125,17 @@ sma_bluetooth:
 |-----|------|-------------|
 | `phase_a/b/c.voltage` | V | AC voltage per phase |
 | `phase_a/b/c.current` | A | AC current per phase |
-| `phase_a/b/c.active_power` | kW | AC power per phase |
+| `phase_a/b/c.active_power` | W | AC power per phase |
 | `pv1/pv2.voltage` | V | DC voltage per MPPT |
 | `pv1/pv2.current` | A | DC current per MPPT |
-| `pv1/pv2.active_power` | kW | DC power per MPPT |
+| `pv1/pv2.active_power` | W | DC power per MPPT |
 | `frequency` | Hz | Grid frequency |
 | `energy_production_day` | kWh | Daily energy yield |
 | `total_energy_production` | kWh | Lifetime energy yield |
 | `inverter_module_temp` | °C | Module temperature |
 | `bt_signal_strength` | % | Bluetooth signal |
-| `today_generation_time` | h | Daily operation time |
-| `total_generation_time` | h | Lifetime feed-in time |
+| `today_generation_time` | h | Total operation time |
+| `total_generation_time` | h | Total feed-in time |
 
 ### Text Sensor Platform
 
@@ -180,16 +180,20 @@ Each inverter is registered as a separate ESPHome `Device` with a stable ID deri
 
 ## Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and architecture details.
+
 ### Run protocol tests (no hardware needed)
 
 ```bash
-pio test -e native
+.venv/bin/pio test -e native
 ```
 
-### Compile for ESP32
+### Compile with ESPHome (Docker)
 
 ```bash
-esphome compile examples/minimal.yaml
+docker run --rm \
+  -v /path/to/config.yaml:/config/config.yaml \
+  ghcr.io/esphome/esphome compile /config/config.yaml
 ```
 
 ## Credits

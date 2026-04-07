@@ -156,12 +156,12 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
 // ============================================================
 
 E_RC SmaInverterDevice::initialize_connection(SmaBluetoothHub *hub) {
-  ESP_LOGI(TAG, "[%s] Initializing SMA connection", mac_string_.c_str());
+  ESP_LOGD(TAG, "[%s] Initializing SMA connection", mac_string_.c_str());
 
   // Step 1: Receive packet → extract NetID
   get_packet(hub, inv_data_.btAddress, 2);
   inv_data_.NetID = pkt_buf_[22];
-  ESP_LOGI(TAG, "[%s] NetID=0x%02X", mac_string_.c_str(), inv_data_.NetID);
+  ESP_LOGD(TAG, "[%s] NetID=0x%02X", mac_string_.c_str(), inv_data_.NetID);
 
   // Step 2: Send NetID config
   write_packet_header(pkt_buf_, 0x02, inv_data_.btAddress);
@@ -175,7 +175,7 @@ E_RC SmaInverterDevice::initialize_connection(SmaBluetoothHub *hub) {
   // Step 3: Receive response → extract ESP BT address
   get_packet(hub, inv_data_.btAddress, 5);
   memcpy(esp_bt_address_, pkt_buf_ + 26, 6);
-  ESP_LOGI(TAG, "[%s] ESP BT addr: %02X:%02X:%02X:%02X:%02X:%02X",
+  ESP_LOGD(TAG, "[%s] ESP BT addr: %02X:%02X:%02X:%02X:%02X:%02X",
            mac_string_.c_str(),
            esp_bt_address_[5], esp_bt_address_[4], esp_bt_address_[3],
            esp_bt_address_[2], esp_bt_address_[1], esp_bt_address_[0]);
@@ -195,7 +195,7 @@ E_RC SmaInverterDevice::initialize_connection(SmaBluetoothHub *hub) {
   if (!validate_checksum()) return E_CHKSUM;
 
   inv_data_.Serial = get_u32(pkt_buf_ + 57);
-  ESP_LOGI(TAG, "[%s] Serial: %lu", mac_string_.c_str(), (unsigned long)inv_data_.Serial);
+  ESP_LOGD(TAG, "[%s] Serial: %lu", mac_string_.c_str(), (unsigned long)inv_data_.Serial);
 
   return E_OK;
 }
@@ -237,7 +237,7 @@ E_RC SmaInverterDevice::logon(SmaBluetoothHub *hub, const char *password, uint8_
   if (pkt_id_ == rcv_pkt_id && get_u32(pkt_buf_ + 41) == (uint32_t)now) {
     inv_data_.SUSyID = get_u16(pkt_buf_ + 15);
     inv_data_.Serial = get_u32(pkt_buf_ + 17);
-    ESP_LOGI(TAG, "[%s] Logon OK (SUSyID=0x%02X Serial=%lu)",
+    ESP_LOGD(TAG, "[%s] Logon OK (SUSyID=0x%02X Serial=%lu)",
              mac_string_.c_str(), inv_data_.SUSyID, (unsigned long)inv_data_.Serial);
     return E_OK;
   }
@@ -800,22 +800,30 @@ bool SmaInverterDevice::publish_sensors() {
   publish_sensor(phases_[2].current, disp_data_.Iac3);
   publish_sensor(phases_[2].active_power, (float)inv_data_.Pac3);  // W (not kW)
 
-  publish_sensor(inverter_module_temp_, disp_data_.InvTemp);
+  // Only publish temperature if inverter supports it (non-zero)
+  if (disp_data_.InvTemp > 0.0f) {
+    publish_sensor(inverter_module_temp_, disp_data_.InvTemp);
+  }
   publish_sensor(bt_signal_strength_, disp_data_.BTSigStrength);
 
-  publish_sensor(today_generation_time_, (float)inv_data_.OperationTime / 3600.0f);
-  publish_sensor(total_generation_time_, (float)inv_data_.FeedInTime / 3600.0f);
+  // Only publish operation/feed-in time if non-zero (some models don't support it)
+  if (inv_data_.OperationTime > 0) {
+    publish_sensor(today_generation_time_, (float)inv_data_.OperationTime / 3600.0f);
+  }
+  if (inv_data_.FeedInTime > 0) {
+    publish_sensor(total_generation_time_, (float)inv_data_.FeedInTime / 3600.0f);
+  }
   publish_sensor(wakeup_time_, (uint64_t)inv_data_.WakeupTime);
 
 #ifdef USE_TEXT_SENSOR
   publish_sensor(status_text_sensor_,
-                 std::string(lookup_status_code(inv_data_.DevStatus)));
+                 lookup_status_code(inv_data_.DevStatus));
   publish_sensor(serial_number_, inv_data_.DeviceName);
   publish_sensor(software_version_, inv_data_.SWVersion);
   publish_sensor(device_type_,
-                 std::string(lookup_status_code(inv_data_.DeviceType)));
+                 lookup_status_code(inv_data_.DeviceType));
   publish_sensor(device_class_,
-                 std::string(lookup_status_code(inv_data_.DeviceClass)));
+                 lookup_status_code(inv_data_.DeviceClass));
   publish_sensor(inverter_time_sensor_, inv_data_.InverterTimestamp);
   publish_sensor(mac_address_sensor_, mac_string_);
 #endif
@@ -907,9 +915,9 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
               temp_fields, sensor::STATE_CLASS_MEASUREMENT, 1);
   make_sensor(&bt_signal_strength_, "Signal Strength",
               signal_fields, sensor::STATE_CLASS_MEASUREMENT, 0);
-  make_sensor(&today_generation_time_, "Operating Time Today",
-              duration_fields, sensor::STATE_CLASS_TOTAL_INCREASING, 2);
-  make_sensor(&total_generation_time_, "Total Operating Time",
+  make_sensor(&today_generation_time_, "Operating Time",
+              duration_fields, sensor::STATE_CLASS_TOTAL, 0);
+  make_sensor(&total_generation_time_, "Feed-in Time",
               duration_fields, sensor::STATE_CLASS_TOTAL, 0);
 
   // Text sensors (diagnostic category)
@@ -952,7 +960,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   }
 #endif
 
-  ESP_LOGW(TAG, "Auto-sensors DONE for '%s'. App sensors=%d",
+  ESP_LOGI(TAG, "Auto-sensors DONE for '%s'. App sensors=%d",
            prefix.c_str(), (int)App.get_sensors().size());
 }
 
