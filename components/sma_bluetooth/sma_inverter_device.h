@@ -3,9 +3,14 @@
 /* MIT License — based on work by Lupo135, darrylb123, keerekeerweere */
 
 #include "sma_protocol.h"
+#include "esphome/core/defines.h"
 #include "esphome/components/sensor/sensor.h"
+#ifdef USE_TEXT_SENSOR
 #include "esphome/components/text_sensor/text_sensor.h"
+#endif
+#ifdef USE_BINARY_SENSOR
 #include "esphome/components/binary_sensor/binary_sensor.h"
+#endif
 #include "esphome/core/entity_base.h"
 
 #include <string>
@@ -31,6 +36,7 @@ class DynamicSensor : public sensor::Sensor {
   char *owned_name_;
 };
 
+#ifdef USE_TEXT_SENSOR
 class DynamicTextSensor : public text_sensor::TextSensor {
  public:
   explicit DynamicTextSensor(const std::string &name) : owned_name_(strdup(name.c_str())) {
@@ -41,7 +47,9 @@ class DynamicTextSensor : public text_sensor::TextSensor {
  protected:
   char *owned_name_;
 };
+#endif
 
+#ifdef USE_BINARY_SENSOR
 class DynamicBinarySensor : public binary_sensor::BinarySensor {
  public:
   explicit DynamicBinarySensor(const std::string &name) : owned_name_(strdup(name.c_str())) {
@@ -52,6 +60,7 @@ class DynamicBinarySensor : public binary_sensor::BinarySensor {
  protected:
   char *owned_name_;
 };
+#endif
 
 class SmaInverterDevice {
  public:
@@ -118,13 +127,17 @@ class SmaInverterDevice {
   void set_today_generation_time_sensor(sensor::Sensor *s) { today_generation_time_ = s; }
   void set_total_generation_time_sensor(sensor::Sensor *s) { total_generation_time_ = s; }
   void set_wakeup_time_sensor(sensor::Sensor *s) { wakeup_time_ = s; }
+#ifdef USE_TEXT_SENSOR
   void set_inverter_status_sensor(text_sensor::TextSensor *s) { status_text_sensor_ = s; }
   void set_serial_number_sensor(text_sensor::TextSensor *s) { serial_number_ = s; }
   void set_software_version_sensor(text_sensor::TextSensor *s) { software_version_ = s; }
   void set_device_type_sensor(text_sensor::TextSensor *s) { device_type_ = s; }
   void set_device_class_sensor(text_sensor::TextSensor *s) { device_class_ = s; }
   void set_inverter_time_sensor(text_sensor::TextSensor *s) { inverter_time_sensor_ = s; }
+#endif
+#ifdef USE_BINARY_SENSOR
   void set_grid_relay_sensor(binary_sensor::BinarySensor *s) { grid_relay_ = s; }
+#endif
 
  protected:
   // Protocol operations (run inside hub's BT task, use hub for I/O)
@@ -153,8 +166,12 @@ class SmaInverterDevice {
   // Sensor publish helpers
   void publish_sensor(sensor::Sensor *s, float v);
   void publish_sensor(sensor::Sensor *s, uint64_t v);
+#ifdef USE_TEXT_SENSOR
   void publish_sensor(text_sensor::TextSensor *s, const std::string &v);
+#endif
+#ifdef USE_BINARY_SENSOR
   void publish_sensor(binary_sensor::BinarySensor *s, bool v);
+#endif
 
   // Per-inverter identity
   uint8_t bt_address_[6]{};
@@ -214,14 +231,18 @@ class SmaInverterDevice {
   sensor::Sensor *total_generation_time_{nullptr};
   sensor::Sensor *wakeup_time_{nullptr};
 
+#ifdef USE_TEXT_SENSOR
   text_sensor::TextSensor *status_text_sensor_{nullptr};
   text_sensor::TextSensor *serial_number_{nullptr};
   text_sensor::TextSensor *software_version_{nullptr};
   text_sensor::TextSensor *device_type_{nullptr};
   text_sensor::TextSensor *device_class_{nullptr};
   text_sensor::TextSensor *inverter_time_sensor_{nullptr};
+#endif
 
+#ifdef USE_BINARY_SENSOR
   binary_sensor::BinarySensor *grid_relay_{nullptr};
+#endif
 
   // Flag: auto-sensors created (to avoid duplicating)
   bool auto_sensors_created_{false};

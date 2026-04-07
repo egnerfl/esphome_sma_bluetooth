@@ -747,13 +747,17 @@ void SmaInverterDevice::publish_sensor(sensor::Sensor *s, uint64_t v) {
   if (s != nullptr) s->publish_state((float)v);
 }
 
+#ifdef USE_TEXT_SENSOR
 void SmaInverterDevice::publish_sensor(text_sensor::TextSensor *s, const std::string &v) {
   if (s != nullptr && !v.empty()) s->publish_state(v);
 }
+#endif
 
+#ifdef USE_BINARY_SENSOR
 void SmaInverterDevice::publish_sensor(binary_sensor::BinarySensor *s, bool v) {
   if (s != nullptr) s->publish_state(v);
 }
+#endif
 
 void SmaInverterDevice::publish_sensors() {
   publish_sensor(today_production_, disp_data_.EToday);
@@ -787,10 +791,9 @@ void SmaInverterDevice::publish_sensors() {
   publish_sensor(total_generation_time_, (float)inv_data_.FeedInTime / 3600.0f);
   publish_sensor(wakeup_time_, (uint64_t)inv_data_.WakeupTime);
 
+#ifdef USE_TEXT_SENSOR
   publish_sensor(status_text_sensor_,
                  std::string(lookup_status_code(inv_data_.DevStatus)));
-  publish_sensor(grid_relay_, inv_data_.GridRelay == 51);  // 51 = "Closed"
-
   publish_sensor(serial_number_, inv_data_.DeviceName);
   publish_sensor(software_version_, inv_data_.SWVersion);
   publish_sensor(device_type_,
@@ -798,6 +801,10 @@ void SmaInverterDevice::publish_sensors() {
   publish_sensor(device_class_,
                  std::string(lookup_status_code(inv_data_.DeviceClass)));
   publish_sensor(inverter_time_sensor_, inv_data_.InverterTimestamp);
+#endif
+#ifdef USE_BINARY_SENSOR
+  publish_sensor(grid_relay_, inv_data_.GridRelay == 51);  // 51 = "Closed"
+#endif
 }
 
 // ============================================================
@@ -820,19 +827,23 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   };
 
   auto make_text_sensor = [&](text_sensor::TextSensor **target, const std::string &name) {
+#ifdef USE_TEXT_SENSOR
     if (*target == nullptr) {
       auto *s = new DynamicTextSensor(name);
       App.register_text_sensor(s);
       *target = s;
     }
+#endif
   };
 
   auto make_binary_sensor = [&](binary_sensor::BinarySensor **target, const std::string &name) {
+#ifdef USE_BINARY_SENSOR
     if (*target == nullptr) {
       auto *s = new DynamicBinarySensor(name);
       App.register_binary_sensor(s);
       *target = s;
     }
+#endif
   };
 
   // AC phase sensors
@@ -861,14 +872,18 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   make_sensor(&total_generation_time_, prefix + " Total Generation Time");
 
   // Text sensors
+#ifdef USE_TEXT_SENSOR
   make_text_sensor(&status_text_sensor_, prefix + " Status");
   make_text_sensor(&serial_number_, prefix + " Serial");
   make_text_sensor(&software_version_, prefix + " Software Version");
   make_text_sensor(&device_type_, prefix + " Device Type");
   make_text_sensor(&device_class_, prefix + " Device Class");
+#endif
 
   // Binary sensor
+#ifdef USE_BINARY_SENSOR
   make_binary_sensor(&grid_relay_, prefix + " Grid Relay");
+#endif
 }
 
 }  // namespace sma_bluetooth
