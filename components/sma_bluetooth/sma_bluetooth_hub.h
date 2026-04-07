@@ -77,6 +77,9 @@ class SmaBluetoothHub : public Component {
   // Discovery
   void trigger_discovery();
 
+  // Erase NVS cache (call from on_boot lambda to force rediscovery)
+  void erase_nvs_cache();
+
   const std::vector<std::string> &get_passwords() const { return passwords_; }
   uint32_t query_delay_ms() const { return query_delay_ms_; }
 

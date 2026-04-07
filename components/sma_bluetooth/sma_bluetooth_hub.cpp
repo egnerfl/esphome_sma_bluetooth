@@ -472,6 +472,16 @@ void SmaBluetoothHub::trigger_discovery() {
   run_discovery_scan();
 }
 
+void SmaBluetoothHub::erase_nvs_cache() {
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
+    nvs_erase_all(handle);
+    nvs_commit(handle);
+    nvs_close(handle);
+    ESP_LOGW(TAG, "NVS cache erased — will rediscover on next cycle");
+  }
+}
+
 // ============================================================
 //  Night mode (simplified — based on time of day)
 // ============================================================
