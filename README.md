@@ -10,7 +10,7 @@ ESPHome external component for reading data from SMA solar inverters via Bluetoo
 - **Persistent discovery** — discovered inverter MACs are cached in NVS flash and survive reboots (including overnight when inverters are off)
 - **Smart password handling** — configurable default password list, per-inverter overrides, auto-caching of working passwords
 - **Full sensor set** — AC/DC power, voltage, current, frequency, energy, temperature, status
-- **Auto-sensor creation** — discovered inverters automatically get all sensors named by serial number
+- **Auto-sensor creation** — discovered inverters automatically get all sensors named by MAC address
 - **Zero-config mode** — just add `sma_bluetooth:` and it works
 
 ## Requirements
@@ -35,7 +35,7 @@ sma_bluetooth:
 This will:
 1. Scan for all nearby SMA inverters
 2. Try default passwords ("0000", "1111")
-3. Auto-create all sensors per inverter (named "SMA {serial} {metric}")
+3. Auto-create all sensors per inverter (named "SMA {MAC} {metric}")
 4. Register each inverter as a separate sub-device in Home Assistant
 5. Cache discovered MACs to flash so sensors persist across reboots
 
@@ -134,8 +134,8 @@ sma_bluetooth:
 | `total_energy_production` | kWh | Lifetime energy yield |
 | `inverter_module_temp` | °C | Module temperature |
 | `bt_signal_strength` | % | Bluetooth signal |
-| `today_generation_time` | h | Total operation time |
-| `total_generation_time` | h | Total feed-in time |
+| `today_generation_time` | h | Operating time |
+| `total_generation_time` | h | Feed-in time |
 
 ### Text Sensor Platform
 
@@ -146,6 +146,7 @@ sma_bluetooth:
 | `software_version` | Firmware version |
 | `device_type` | Device type label |
 | `device_class` | Device class |
+| `mac_address` | Bluetooth MAC address |
 | `inverter_time` | Inverter clock |
 
 ### Binary Sensor Platform
@@ -167,7 +168,7 @@ A full cycle for 3 inverters takes ~45-60 seconds.
 ### Discovery and Persistence
 
 1. **First boot**: The component runs a GAP discovery scan, finds SMA inverters, connects to each, and creates sensors dynamically.
-2. **NVS caching**: After discovery, inverter MACs and names are saved to flash (NVS). The ESP32 then reboots once so Home Assistant sees all sensors in the initial entity list.
+2. **NVS caching**: After discovery, inverter MACs are saved to flash (NVS). The ESP32 reboots once after a full poll cycle so Home Assistant sees all sensors in the initial entity list.
 3. **Subsequent boots**: Cached inverters are pre-created during `setup()` before the API connects, so sensors are immediately available to Home Assistant — even if inverters are offline (e.g. nighttime).
 4. **Periodic re-discovery**: Every 5 minutes, the component scans for new inverters. Newly found inverters trigger a one-time reboot to register with HA.
 
@@ -190,10 +191,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and architecture deta
 
 ### Compile with ESPHome (Docker)
 
+Mount the local component directory for development:
+
 ```bash
 docker run --rm \
   -v /path/to/config.yaml:/config/config.yaml \
+  -v /path/to/esphome_sma_bluetooth:/local_component \
   ghcr.io/esphome/esphome compile /config/config.yaml
+```
+
+The config YAML should reference the local component:
+
+```yaml
+external_components:
+  - source:
+      type: local
+      path: /local_component/components
+    components: [sma_bluetooth]
 ```
 
 ## Credits
