@@ -101,12 +101,14 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   }
 
   // Create auto-sensors after we have serial number
+  // (deferred to main loop for thread safety — App.register_sensor() is not thread-safe)
   if (!auto_sensors_created_ && !inv_data_.DeviceName.empty()) {
     std::string prefix = name_prefix_;
     if (prefix.empty()) {
       prefix = "SMA " + inv_data_.DeviceName;
     }
-    create_auto_sensors(prefix);
+    pending_auto_sensor_prefix_ = prefix;
+    pending_auto_sensors_ = true;
   }
 
   // BT signal strength
@@ -761,6 +763,12 @@ void SmaInverterDevice::publish_sensor(binary_sensor::BinarySensor *s, bool v) {
 #endif
 
 void SmaInverterDevice::publish_sensors() {
+  // Create auto-sensors on main loop if BT task flagged it
+  if (pending_auto_sensors_) {
+    pending_auto_sensors_ = false;
+    create_auto_sensors(pending_auto_sensor_prefix_);
+  }
+
   publish_sensor(today_production_, disp_data_.EToday);
   publish_sensor(total_energy_production_, disp_data_.ETotal);
   publish_sensor(grid_frequency_sensor_, disp_data_.GridFreq);

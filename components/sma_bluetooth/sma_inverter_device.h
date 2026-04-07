@@ -271,6 +271,11 @@ class SmaInverterDevice {
   // Flag: auto-sensors created (to avoid duplicating)
   bool auto_sensors_created_{false};
 
+  // Deferred auto-sensor creation: BT task sets the prefix,
+  // main loop creates & registers the sensors (thread safety).
+  std::string pending_auto_sensor_prefix_;
+  volatile bool pending_auto_sensors_{false};
+
 #ifdef USE_DEVICES
   Device *ha_device_{nullptr};
 #endif
