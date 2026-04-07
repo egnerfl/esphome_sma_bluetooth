@@ -721,25 +721,33 @@ bool SmaInverterDevice::is_valid_sender(const uint8_t exp[6], const uint8_t is[6
 
 void SmaInverterDevice::handle_missing_values() {
   auto &d = disp_data_;
+  auto &r = inv_data_;
 
+  // DC power: fallback from V × A when SpotDCPower query fails
   if (d.Pdc1 == 0.0f && d.Udc1 != 0.0f && d.Idc1 != 0.0f) {
-    d.Pdc1 = d.Udc1 * d.Idc1 / 1000.0f;
+    d.Pdc1 = d.Udc1 * d.Idc1 / 1000.0f;  // kW
+    r.Pdc1 = (int32_t)(d.Udc1 * d.Idc1);  // W
     d.needsMissingValues = true;
   }
   if (d.Pdc2 == 0.0f && d.Udc2 != 0.0f && d.Idc2 != 0.0f) {
     d.Pdc2 = d.Udc2 * d.Idc2 / 1000.0f;
+    r.Pdc2 = (int32_t)(d.Udc2 * d.Idc2);
     d.needsMissingValues = true;
   }
+  // AC power: fallback from V × A when SpotACPower query fails
   if (d.Pac1 == 0.0f && d.Uac1 != 0.0f && d.Iac1 != 0.0f) {
     d.Pac1 = d.Uac1 * d.Iac1 / 1000.0f;
+    r.Pac1 = (int32_t)(d.Uac1 * d.Iac1);
     d.needsMissingValues = true;
   }
   if (d.Pac2 == 0.0f && d.Uac2 != 0.0f && d.Iac2 != 0.0f) {
     d.Pac2 = d.Uac2 * d.Iac2 / 1000.0f;
+    r.Pac2 = (int32_t)(d.Uac2 * d.Iac2);
     d.needsMissingValues = true;
   }
   if (d.Pac3 == 0.0f && d.Uac3 != 0.0f && d.Iac3 != 0.0f) {
     d.Pac3 = d.Uac3 * d.Iac3 / 1000.0f;
+    r.Pac3 = (int32_t)(d.Uac3 * d.Iac3);
     d.needsMissingValues = true;
   }
 }
