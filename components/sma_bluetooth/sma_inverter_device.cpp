@@ -474,12 +474,12 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
           case CoolsysTmpNom:
             inv_data_.InvTemp = value32_; disp_data_.InvTemp = toTemp(value32_); break;
           case OperationHealth: {
-            uint32_t attr = get_attribute(recptr) & 0x00FFFFFF;  // strip data type byte
+            uint32_t attr = get_attribute(recptr);
             inv_data_.DevStatus = attr;
             break;
           }
           case OperationGriSwStt: {
-            uint32_t attr = get_attribute(recptr) & 0x00FFFFFF;  // strip data type byte
+            uint32_t attr = get_attribute(recptr);
             inv_data_.GridRelay = attr;
             break;
           }
@@ -813,6 +813,10 @@ bool SmaInverterDevice::publish_sensors() {
   publish_sensor(wakeup_time_, (uint64_t)inv_data_.WakeupTime);
 
 #ifdef USE_TEXT_SENSOR
+  ESP_LOGI(TAG, "[%s] Raw attrs: DevStatus=%lu DeviceType=%lu DeviceClass=%lu GridRelay=%lu",
+           mac_string_.c_str(),
+           (unsigned long)inv_data_.DevStatus, (unsigned long)inv_data_.DeviceType,
+           (unsigned long)inv_data_.DeviceClass, (unsigned long)inv_data_.GridRelay);
   publish_sensor(status_text_sensor_,
                  lookup_status_code(inv_data_.DevStatus));
   publish_sensor(serial_number_, inv_data_.DeviceName);

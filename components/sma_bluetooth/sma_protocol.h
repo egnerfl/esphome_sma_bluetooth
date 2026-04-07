@@ -354,6 +354,16 @@ struct StatusCode {
 
 // Status/device type/device class lookup table (from SBFspot TagListEN-US.txt)
 static const StatusCode STATUS_CODES[] = {
+    // Low-range codes
+    {0, "OK"},
+    {35, "Fault"},
+    {38, "Current"},
+    {43, "Not Adjusted"},
+    {44, "External"},
+    {45, "External 2"},
+    {46, "Battery"},
+    {48, "Interior"},
+    {49, "Function"},
     // Status codes (50–319)
     {50, "Status"},
     {51, "Closed"},
