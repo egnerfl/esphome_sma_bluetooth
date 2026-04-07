@@ -64,14 +64,41 @@ void SmaBluetoothHub::loop() {
     }
   }
 
-  // If new auto-sensors were just created at runtime, cache the MAC to NVS
-  // and schedule a reboot so HA re-enumerates entities.
-  if (new_sensors_created) {
-    save_cached_inverters_();
-    ESP_LOGW(TAG, "New sensors created — rebooting in 3s so Home Assistant discovers them...");
-    this->set_timeout("reboot_for_sensors", 3000, []() {
-      App.safe_reboot();
-    });
+  // If new auto-sensors were just created at runtime, don't reboot immediately.
+  // Wait until ALL registered devices have been polled at least once (so all
+  // get serial-based names), or until a timeout expires.
+  if (new_sensors_created && !reboot_pending_) {
+    reboot_pending_ = true;
+    reboot_defer_start_ms_ = millis();
+    ESP_LOGI(TAG, "New sensors created — waiting for all inverters to be polled before rebooting...");
+  }
+
+  if (reboot_pending_) {
+    // Check if all devices have been polled (last_poll_ms != 0 means polled at least once)
+    bool all_polled = true;
+    for (auto *device : devices_) {
+      if (device->last_poll_ms() == 0) {
+        all_polled = false;
+        break;
+      }
+    }
+
+    uint32_t elapsed = millis() - reboot_defer_start_ms_;
+
+    if (all_polled || elapsed > 5 * 60 * 1000) {  // all polled or 5-min timeout
+      save_cached_inverters_();
+      if (all_polled) {
+        ESP_LOGW(TAG, "All %d inverters polled — rebooting in 3s so Home Assistant discovers them...",
+                 (int)devices_.size());
+      } else {
+        ESP_LOGW(TAG, "Reboot timeout (5 min) — rebooting with %d device(s) polled...",
+                 (int)devices_.size());
+      }
+      reboot_pending_ = false;
+      this->set_timeout("reboot_for_sensors", 3000, []() {
+        App.safe_reboot();
+      });
+    }
   }
 
   // Monitor task health
@@ -628,7 +655,14 @@ void SmaBluetoothHub::save_cached_inverters_() {
     snprintf(key_name, sizeof(key_name), "inv_name_%u", i);
     snprintf(key_serial, sizeof(key_serial), "inv_ser_%u", i);
     nvs_set_str(handle, key_mac, devices_[i]->mac_string().c_str());
-    nvs_set_str(handle, key_name, devices_[i]->name_prefix().c_str());
+
+    // Save the effective name: user-configured > serial-based > empty
+    // This ensures pre_create_devices_() can reconstruct clean names on reboot.
+    std::string effective_name = devices_[i]->name_prefix();
+    if (effective_name.empty() && devices_[i]->serial() != 0) {
+      effective_name = "SMA " + std::to_string(devices_[i]->serial());
+    }
+    nvs_set_str(handle, key_name, effective_name.c_str());
     nvs_set_u32(handle, key_serial, devices_[i]->serial());
   }
 

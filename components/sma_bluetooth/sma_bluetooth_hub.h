@@ -141,6 +141,10 @@ class SmaBluetoothHub : public Component {
   std::vector<InverterConfig> inverter_configs_;
   std::vector<InverterConfig> cached_inverter_configs_;  // restored from NVS
 
+  // Reboot deferral: wait for all devices to be polled before rebooting
+  bool reboot_pending_{false};
+  uint32_t reboot_defer_start_ms_{0};
+
   // Singleton instance for static callbacks
   static SmaBluetoothHub *instance_;
 };
