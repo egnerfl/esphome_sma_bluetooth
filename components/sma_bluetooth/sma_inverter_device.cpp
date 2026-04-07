@@ -843,11 +843,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   // Helper lambda to create a sensor if not already set
   auto make_sensor = [&](sensor::Sensor **target, const std::string &name) {
     if (*target == nullptr) {
-      auto *s = new DynamicSensor(name
-#ifdef USE_DEVICES
-          , ha_device_
-#endif
-      );
+      auto *s = new DynamicSensor(name);
       App.register_sensor(s);
       *target = s;
       ESP_LOGD(TAG, "  Sensor '%s' key=0x%08X hash=%u", name.c_str(),
@@ -886,11 +882,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   {
     auto make_ts = [&](text_sensor::TextSensor **target, const std::string &name) {
       if (*target == nullptr) {
-        auto *s = new DynamicTextSensor(name
-#ifdef USE_DEVICES
-            , ha_device_
-#endif
-        );
+        auto *s = new DynamicTextSensor(name);
         App.register_text_sensor(s);
         *target = s;
         ESP_LOGD(TAG, "  TextSensor '%s' key=0x%08X", name.c_str(), s->get_object_id_hash());
@@ -907,14 +899,11 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   // Binary sensor
 #ifdef USE_BINARY_SENSOR
   if (grid_relay_ == nullptr) {
-    auto *s = new DynamicBinarySensor(prefix + " Grid Relay"
-#ifdef USE_DEVICES
-        , ha_device_
-#endif
-    );
+    std::string relay_name = prefix + " Grid Relay";
+    auto *s = new DynamicBinarySensor(relay_name);
     App.register_binary_sensor(s);
     grid_relay_ = s;
-    ESP_LOGD(TAG, "  BinarySensor '%s' key=0x%08X", (prefix + " Grid Relay").c_str(),
+    ESP_LOGD(TAG, "  BinarySensor '%s' key=0x%08X", relay_name.c_str(),
              s->get_object_id_hash());
   }
 #endif
