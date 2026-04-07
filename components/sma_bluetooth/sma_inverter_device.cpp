@@ -777,6 +777,12 @@ bool SmaInverterDevice::publish_sensors() {
     sensors_created = true;
   }
 
+  ESP_LOGI(TAG, "[%s] Energy: EToday=%.3f kWh (raw=%llu) ETotal=%.1f kWh (raw=%llu) OpTime=%llu FeedIn=%llu",
+           mac_string_.c_str(),
+           disp_data_.EToday, (unsigned long long)inv_data_.EToday,
+           disp_data_.ETotal, (unsigned long long)inv_data_.ETotal,
+           (unsigned long long)inv_data_.OperationTime, (unsigned long long)inv_data_.FeedInTime);
+
   publish_sensor(today_production_, disp_data_.EToday);
   publish_sensor(total_energy_production_, disp_data_.ETotal);
   publish_sensor(grid_frequency_sensor_, disp_data_.GridFreq);
