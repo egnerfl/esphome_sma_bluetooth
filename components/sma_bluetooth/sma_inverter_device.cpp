@@ -100,17 +100,13 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
     vTaskDelay(pdMS_TO_TICKS(hub->query_delay_ms()));
   }
 
-  // Create auto-sensors after we have serial number
+  // Create auto-sensors after we have device info
   // (deferred to main loop for thread safety — App.register_sensor() is not thread-safe)
   if (!auto_sensors_created_ && !inv_data_.DeviceName.empty()) {
     std::string prefix = name_prefix_;
     if (prefix.empty()) {
-      // Use serial number for cleaner device names
-      if (inv_data_.Serial != 0) {
-        prefix = "SMA " + std::to_string(inv_data_.Serial);
-      } else {
-        prefix = "SMA " + mac_string_;
-      }
+      // Use MAC address — always available, never changes between reboots
+      prefix = "SMA " + mac_string_;
     }
     pending_auto_sensor_prefix_ = prefix;
     pending_auto_sensors_ = true;

@@ -64,11 +64,9 @@ void SmaBluetoothHub::loop() {
     }
   }
 
-  // If new auto-sensors were just created at runtime, don't reboot immediately.
-  // Wait until the BT task finishes one full poll cycle — that ensures every
-  // discovered device has had a chance to be polled and get its serial number.
-  // We don't know how many inverters will be discovered, so we can't count them;
-  // we just wait for one complete pass through the device list.
+  // If new auto-sensors were just created at runtime, wait for the BT task to
+  // finish one full poll cycle before rebooting. This minimizes reboot count by
+  // letting all discovered inverters create their sensors in one pass.
   if (new_sensors_created) {
     reboot_pending_ = true;
     poll_cycle_complete_ = false;  // clear stale signal from previous cycle
@@ -641,20 +639,9 @@ void SmaBluetoothHub::save_cached_inverters_() {
   nvs_set_u8(handle, NVS_KEY_COUNT, count);
 
   for (uint8_t i = 0; i < count; i++) {
-    char key_mac[16], key_name[16], key_serial[16];
+    char key_mac[16];
     snprintf(key_mac, sizeof(key_mac), "inv_mac_%u", i);
-    snprintf(key_name, sizeof(key_name), "inv_name_%u", i);
-    snprintf(key_serial, sizeof(key_serial), "inv_ser_%u", i);
     nvs_set_str(handle, key_mac, devices_[i]->mac_string().c_str());
-
-    // Save the effective name: user-configured > serial-based > empty
-    // This ensures pre_create_devices_() can reconstruct clean names on reboot.
-    std::string effective_name = devices_[i]->name_prefix();
-    if (effective_name.empty() && devices_[i]->serial() != 0) {
-      effective_name = "SMA " + std::to_string(devices_[i]->serial());
-    }
-    nvs_set_str(handle, key_name, effective_name.c_str());
-    nvs_set_u32(handle, key_serial, devices_[i]->serial());
   }
 
   nvs_commit(handle);
@@ -680,33 +667,23 @@ void SmaBluetoothHub::restore_cached_inverters_() {
   ESP_LOGD(TAG, "NVS: found %u cached inverter(s)", count);
 
   for (uint8_t i = 0; i < count; i++) {
-    char key_mac[16], key_name[16], key_serial[16];
+    char key_mac[16];
     snprintf(key_mac, sizeof(key_mac), "inv_mac_%u", i);
-    snprintf(key_name, sizeof(key_name), "inv_name_%u", i);
-    snprintf(key_serial, sizeof(key_serial), "inv_ser_%u", i);
 
     char mac_buf[20] = {0};
-    char name_buf[64] = {0};
     size_t mac_len = sizeof(mac_buf);
-    size_t name_len = sizeof(name_buf);
-    uint32_t serial = 0;
 
     esp_err_t mac_err = nvs_get_str(handle, key_mac, mac_buf, &mac_len);
-    esp_err_t name_err = nvs_get_str(handle, key_name, name_buf, &name_len);
-    nvs_get_u32(handle, key_serial, &serial);  // OK if missing (older cache)
 
-    if (mac_err == ESP_OK && name_err == ESP_OK) {
+    if (mac_err == ESP_OK) {
       InverterConfig cfg;
       cfg.mac_string = mac_buf;
-      cfg.name = name_buf;
-      cfg.serial = serial;
       cfg.parse_mac_from_string();
       cached_inverter_configs_.push_back(cfg);
-      ESP_LOGD(TAG, "  Restored cached inverter[%u]: '%s' (%s) serial=%lu",
-               i, name_buf, mac_buf, (unsigned long)serial);
+      ESP_LOGD(TAG, "  Restored cached inverter[%u]: %s", i, mac_buf);
     } else {
-      ESP_LOGW(TAG, "  NVS read failed for inverter[%u]: mac=%s name=%s", i,
-               esp_err_to_name(mac_err), esp_err_to_name(name_err));
+      ESP_LOGW(TAG, "  NVS read failed for inverter[%u]: %s", i,
+               esp_err_to_name(mac_err));
     }
   }
 
@@ -752,12 +729,10 @@ void SmaBluetoothHub::pre_create_devices_() {
     if (!cfg->password.empty()) dev->set_password(cfg->password);
     if (!cfg->name.empty()) dev->set_name_prefix(cfg->name);
 
-    // Build device name: user-configured name > serial number > MAC fallback
+    // Build device name: user-configured name > MAC (always stable)
     std::string prefix;
     if (!cfg->name.empty()) {
       prefix = cfg->name;
-    } else if (cfg->serial != 0) {
-      prefix = "SMA " + std::to_string(cfg->serial);
     } else {
       prefix = "SMA " + cfg->mac_string;
     }
