@@ -387,6 +387,9 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
 
         if (recordsize == 16) {
           value64_ = get_u64(recptr + 8);
+          ESP_LOGD(TAG, "[%s] rec: code=0x%08X lri=0x%04X dt=%u val64=%llu",
+                   mac_string_.c_str(), code, lri, data_type,
+                   (unsigned long long)value64_);
           if (is_NaN(value64_) || is_NaN((uint64_t)value64_)) value64_ = 0;
         } else if (data_type != DT_STRING && data_type != DT_STATUS) {
           value32_ = get_u32(recptr + 16);
