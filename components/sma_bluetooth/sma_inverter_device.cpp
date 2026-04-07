@@ -893,6 +893,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
         );
         App.register_text_sensor(s);
         *target = s;
+        ESP_LOGD(TAG, "  TextSensor '%s' key=0x%08X", name.c_str(), s->get_object_id_hash());
       }
     };
     make_ts(&status_text_sensor_, prefix + " Status");
@@ -913,8 +914,13 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
     );
     App.register_binary_sensor(s);
     grid_relay_ = s;
+    ESP_LOGD(TAG, "  BinarySensor '%s' key=0x%08X", (prefix + " Grid Relay").c_str(),
+             s->get_object_id_hash());
   }
 #endif
+
+  ESP_LOGW(TAG, "Auto-sensors DONE for '%s'. App sensors=%d",
+           prefix.c_str(), (int)App.get_sensors().size());
 }
 
 }  // namespace sma_bluetooth

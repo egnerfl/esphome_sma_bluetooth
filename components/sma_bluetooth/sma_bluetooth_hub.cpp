@@ -631,15 +631,18 @@ void SmaBluetoothHub::restore_cached_inverters_() {
   nvs_handle_t handle;
   esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
   if (err != ESP_OK) {
-    ESP_LOGD(TAG, "No NVS cache found (first boot?)");
+    ESP_LOGW(TAG, "NVS open for read failed: %s (first boot?)", esp_err_to_name(err));
     return;
   }
 
   uint8_t count = 0;
   if (nvs_get_u8(handle, NVS_KEY_COUNT, &count) != ESP_OK || count == 0) {
+    ESP_LOGW(TAG, "NVS: no cached inverter count (or 0)");
     nvs_close(handle);
     return;
   }
+
+  ESP_LOGI(TAG, "NVS: found %u cached inverter(s)", count);
 
   for (uint8_t i = 0; i < count; i++) {
     char key_mac[16], key_name[16];
@@ -651,14 +654,19 @@ void SmaBluetoothHub::restore_cached_inverters_() {
     size_t mac_len = sizeof(mac_buf);
     size_t name_len = sizeof(name_buf);
 
-    if (nvs_get_str(handle, key_mac, mac_buf, &mac_len) == ESP_OK &&
-        nvs_get_str(handle, key_name, name_buf, &name_len) == ESP_OK) {
+    esp_err_t mac_err = nvs_get_str(handle, key_mac, mac_buf, &mac_len);
+    esp_err_t name_err = nvs_get_str(handle, key_name, name_buf, &name_len);
+
+    if (mac_err == ESP_OK && name_err == ESP_OK) {
       InverterConfig cfg;
       cfg.mac_string = mac_buf;
       cfg.name = name_buf;
       cfg.parse_mac_from_string();
       cached_inverter_configs_.push_back(cfg);
-      ESP_LOGI(TAG, "Restored cached inverter: %s (%s)", name_buf, mac_buf);
+      ESP_LOGI(TAG, "  Restored cached inverter[%u]: '%s' (%s)", i, name_buf, mac_buf);
+    } else {
+      ESP_LOGW(TAG, "  NVS read failed for inverter[%u]: mac=%s name=%s", i,
+               esp_err_to_name(mac_err), esp_err_to_name(name_err));
     }
   }
 
@@ -673,6 +681,9 @@ void SmaBluetoothHub::pre_create_devices_() {
   // Merge configured inverters and cached (discovered) inverters.
   // Configured entries take priority; cached ones fill in the rest.
   std::vector<InverterConfig *> to_create;
+
+  ESP_LOGI(TAG, "pre_create_devices_: %d configured, %d cached",
+           (int)inverter_configs_.size(), (int)cached_inverter_configs_.size());
 
   for (auto &cfg : inverter_configs_) {
     to_create.push_back(&cfg);
@@ -692,6 +703,8 @@ void SmaBluetoothHub::pre_create_devices_() {
     }
   }
 
+  ESP_LOGI(TAG, "pre_create_devices_: will create %d device(s)", (int)to_create.size());
+
   for (auto *cfg : to_create) {
     // Create the device
     auto *dev = new SmaInverterDevice();
@@ -704,7 +717,8 @@ void SmaBluetoothHub::pre_create_devices_() {
     dev->create_auto_sensors(prefix);
 
     register_device(dev);
-    ESP_LOGI(TAG, "Pre-created device + sensors: %s (%s)", prefix.c_str(), cfg->mac_string.c_str());
+    ESP_LOGW(TAG, "Pre-created device + sensors: '%s' (%s) — sensors registered in App",
+             prefix.c_str(), cfg->mac_string.c_str());
   }
 }
 
