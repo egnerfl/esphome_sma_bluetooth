@@ -849,7 +849,6 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
       ESP_LOGD(TAG, "  Sensor '%s' key=0x%08X hash=%u", name.c_str(),
                s->get_object_id_hash(), s->get_object_id_hash());
     }
-    }
   };
 
   // AC phase sensors
