@@ -479,7 +479,7 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
             break;
           }
           case OperationGriSwStt: {
-            uint32_t attr = get_attribute(recptr);
+            uint32_t attr = get_attribute(recptr) & 0x00FFFFFF;  // strip data type byte
             inv_data_.GridRelay = attr;
             break;
           }
