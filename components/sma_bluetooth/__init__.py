@@ -2,6 +2,11 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
 from esphome.core import CORE
+from esphome.core.entity_helpers import (
+    register_device_class,
+    register_unit_of_measurement,
+    register_icon,
+)
 
 CODEOWNERS = ["@egnerfl"]
 DEPENDENCIES = ["esp32"]
@@ -98,3 +103,42 @@ async def to_code(config):
         CORE.register_platform_component("text_sensor", None)
     for _ in range(1 * max_devices):
         CORE.register_platform_component("binary_sensor", None)
+
+    # Register entity metadata strings for runtime-created sensors.
+    # These get added to ESPHome's PROGMEM lookup tables; indices are emitted
+    # as C++ #define constants so create_auto_sensors() can pack them into
+    # the entity_fields bitfield of configure_entity_().
+
+    # Device classes (sensor + binary_sensor share the same lookup table)
+    cg.add_define("SMA_DC_IDX_POWER", register_device_class("power"))
+    cg.add_define("SMA_DC_IDX_ENERGY", register_device_class("energy"))
+    cg.add_define("SMA_DC_IDX_VOLTAGE", register_device_class("voltage"))
+    cg.add_define("SMA_DC_IDX_CURRENT", register_device_class("current"))
+    cg.add_define("SMA_DC_IDX_TEMPERATURE", register_device_class("temperature"))
+    cg.add_define("SMA_DC_IDX_FREQUENCY", register_device_class("frequency"))
+    cg.add_define("SMA_DC_IDX_SIGNAL_STRENGTH", register_device_class("signal_strength"))
+    cg.add_define("SMA_DC_IDX_DURATION", register_device_class("duration"))
+
+    # Units of measurement
+    cg.add_define("SMA_UOM_IDX_W", register_unit_of_measurement("W"))
+    cg.add_define("SMA_UOM_IDX_KWH", register_unit_of_measurement("kWh"))
+    cg.add_define("SMA_UOM_IDX_V", register_unit_of_measurement("V"))
+    cg.add_define("SMA_UOM_IDX_A", register_unit_of_measurement("A"))
+    cg.add_define("SMA_UOM_IDX_HZ", register_unit_of_measurement("Hz"))
+    cg.add_define("SMA_UOM_IDX_C", register_unit_of_measurement("\u00b0C"))
+    cg.add_define("SMA_UOM_IDX_PERCENT", register_unit_of_measurement("%"))
+    cg.add_define("SMA_UOM_IDX_H", register_unit_of_measurement("h"))
+
+    # Icons
+    cg.add_define("SMA_ICON_IDX_FLASH", register_icon("mdi:flash"))
+    cg.add_define("SMA_ICON_IDX_SINE", register_icon("mdi:sine-wave"))
+    cg.add_define("SMA_ICON_IDX_THERMO", register_icon("mdi:thermometer"))
+    cg.add_define("SMA_ICON_IDX_BT", register_icon("mdi:bluetooth"))
+    cg.add_define("SMA_ICON_IDX_TIMER", register_icon("mdi:timer-outline"))
+    cg.add_define("SMA_ICON_IDX_RELAY", register_icon("mdi:electric-switch"))
+    cg.add_define("SMA_ICON_IDX_SOLAR", register_icon("mdi:solar-power"))
+
+    # Enable entity metadata features
+    cg.add_define("USE_ENTITY_DEVICE_CLASS")
+    cg.add_define("USE_ENTITY_UNIT_OF_MEASUREMENT")
+    cg.add_define("USE_ENTITY_ICON")

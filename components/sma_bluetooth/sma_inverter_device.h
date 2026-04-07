@@ -24,19 +24,27 @@ namespace sma_bluetooth {
 class SmaBluetoothHub;
 
 // Wrapper subclasses for dynamic sensor creation at runtime.
-// Uses configure_entity_() (protected, accessible from subclass) to set name
-// and compute the object_id_hash needed for HA entity discovery.
+// Uses configure_entity_() (protected, accessible from subclass) to set name,
+// compute the object_id_hash, and pack device_class/UOM/icon into entity_fields.
 // Optionally assigns sensors to an ESPHome Device for sub-device support.
+
+// Pack device_class, UOM, and icon indices into entity_fields bitfield.
+// Layout: bits 0-7 = dc_idx, 8-15 = uom_idx, 16-23 = icon_idx, 26-27 = entity_category
+static constexpr uint32_t sma_entity_fields(uint8_t dc_idx, uint8_t uom_idx, uint8_t icon_idx,
+                                             uint8_t entity_category = 0) {
+  return (uint32_t(dc_idx) << 0) | (uint32_t(uom_idx) << 8) |
+         (uint32_t(icon_idx) << 16) | (uint32_t(entity_category) << 26);
+}
 
 class DynamicSensor : public sensor::Sensor {
  public:
 #ifdef USE_DEVICES
-  explicit DynamicSensor(const std::string &name, Device *device = nullptr)
+  explicit DynamicSensor(const std::string &name, uint32_t entity_fields = 0, Device *device = nullptr)
 #else
-  explicit DynamicSensor(const std::string &name)
+  explicit DynamicSensor(const std::string &name, uint32_t entity_fields = 0)
 #endif
       : owned_name_(strdup(name.c_str())) {
-    this->configure_entity_(owned_name_, 0, 0);
+    this->configure_entity_(owned_name_, 0, entity_fields);
 #ifdef USE_DEVICES
     if (device) this->set_device_(device);
 #endif
@@ -50,12 +58,12 @@ class DynamicSensor : public sensor::Sensor {
 class DynamicTextSensor : public text_sensor::TextSensor {
  public:
 #ifdef USE_DEVICES
-  explicit DynamicTextSensor(const std::string &name, Device *device = nullptr)
+  explicit DynamicTextSensor(const std::string &name, uint32_t entity_fields = 0, Device *device = nullptr)
 #else
-  explicit DynamicTextSensor(const std::string &name)
+  explicit DynamicTextSensor(const std::string &name, uint32_t entity_fields = 0)
 #endif
       : owned_name_(strdup(name.c_str())) {
-    this->configure_entity_(owned_name_, 0, 0);
+    this->configure_entity_(owned_name_, 0, entity_fields);
 #ifdef USE_DEVICES
     if (device) this->set_device_(device);
 #endif
@@ -70,12 +78,12 @@ class DynamicTextSensor : public text_sensor::TextSensor {
 class DynamicBinarySensor : public binary_sensor::BinarySensor {
  public:
 #ifdef USE_DEVICES
-  explicit DynamicBinarySensor(const std::string &name, Device *device = nullptr)
+  explicit DynamicBinarySensor(const std::string &name, uint32_t entity_fields = 0, Device *device = nullptr)
 #else
-  explicit DynamicBinarySensor(const std::string &name)
+  explicit DynamicBinarySensor(const std::string &name, uint32_t entity_fields = 0)
 #endif
       : owned_name_(strdup(name.c_str())) {
-    this->configure_entity_(owned_name_, 0, 0);
+    this->configure_entity_(owned_name_, 0, entity_fields);
 #ifdef USE_DEVICES
     if (device) this->set_device_(device);
 #endif
@@ -111,6 +119,7 @@ class SmaInverterDevice {
   const uint8_t *bt_address() const { return bt_address_; }
   const std::string &mac_string() const { return mac_string_; }
   const std::string &name_prefix() const { return name_prefix_; }
+  uint32_t serial() const { return inv_data_.Serial; }
   bool is_data_fresh() const { return data_fresh_; }
   void clear_data_fresh() { data_fresh_ = false; }
   uint32_t last_poll_ms() const { return last_poll_ms_; }
@@ -263,6 +272,7 @@ class SmaInverterDevice {
   text_sensor::TextSensor *device_type_{nullptr};
   text_sensor::TextSensor *device_class_{nullptr};
   text_sensor::TextSensor *inverter_time_sensor_{nullptr};
+  text_sensor::TextSensor *mac_address_sensor_{nullptr};
 #endif
 
 #ifdef USE_BINARY_SENSOR

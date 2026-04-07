@@ -28,6 +28,7 @@ struct InverterConfig {
   std::string mac_string;
   std::string name;       // friendly name prefix for sensors
   std::string password;   // per-inverter override (empty = use defaults)
+  uint32_t    serial{0};  // cached serial number for naming
 
   void parse_mac_from_string() {
     if (mac_string.size() >= 17) {

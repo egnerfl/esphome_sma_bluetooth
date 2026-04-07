@@ -105,7 +105,12 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   if (!auto_sensors_created_ && !inv_data_.DeviceName.empty()) {
     std::string prefix = name_prefix_;
     if (prefix.empty()) {
-      prefix = "SMA " + inv_data_.DeviceName;
+      // Use serial number for cleaner device names
+      if (inv_data_.Serial != 0) {
+        prefix = "SMA " + std::to_string(inv_data_.Serial);
+      } else {
+        prefix = "SMA " + mac_string_;
+      }
     }
     pending_auto_sensor_prefix_ = prefix;
     pending_auto_sensors_ = true;
@@ -777,23 +782,23 @@ bool SmaInverterDevice::publish_sensors() {
 
   publish_sensor(pvs_[0].voltage, disp_data_.Udc1);
   publish_sensor(pvs_[0].current, disp_data_.Idc1);
-  publish_sensor(pvs_[0].active_power, disp_data_.Pdc1);
+  publish_sensor(pvs_[0].active_power, (float)inv_data_.Pdc1);  // W (not kW)
 
   publish_sensor(pvs_[1].voltage, disp_data_.Udc2);
   publish_sensor(pvs_[1].current, disp_data_.Idc2);
-  publish_sensor(pvs_[1].active_power, disp_data_.Pdc2);
+  publish_sensor(pvs_[1].active_power, (float)inv_data_.Pdc2);  // W (not kW)
 
   publish_sensor(phases_[0].voltage, disp_data_.Uac1);
   publish_sensor(phases_[0].current, disp_data_.Iac1);
-  publish_sensor(phases_[0].active_power, disp_data_.Pac1);
+  publish_sensor(phases_[0].active_power, (float)inv_data_.Pac1);  // W (not kW)
 
   publish_sensor(phases_[1].voltage, disp_data_.Uac2);
   publish_sensor(phases_[1].current, disp_data_.Iac2);
-  publish_sensor(phases_[1].active_power, disp_data_.Pac2);
+  publish_sensor(phases_[1].active_power, (float)inv_data_.Pac2);  // W (not kW)
 
   publish_sensor(phases_[2].voltage, disp_data_.Uac3);
   publish_sensor(phases_[2].current, disp_data_.Iac3);
-  publish_sensor(phases_[2].active_power, disp_data_.Pac3);
+  publish_sensor(phases_[2].active_power, (float)inv_data_.Pac3);  // W (not kW)
 
   publish_sensor(inverter_module_temp_, disp_data_.InvTemp);
   publish_sensor(bt_signal_strength_, disp_data_.BTSigStrength);
@@ -812,6 +817,7 @@ bool SmaInverterDevice::publish_sensors() {
   publish_sensor(device_class_,
                  std::string(lookup_status_code(inv_data_.DeviceClass)));
   publish_sensor(inverter_time_sensor_, inv_data_.InverterTimestamp);
+  publish_sensor(mac_address_sensor_, mac_string_);
 #endif
 #ifdef USE_BINARY_SENSOR
   publish_sensor(grid_relay_, inv_data_.GridRelay == 51);  // 51 = "Closed"
@@ -840,14 +846,29 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   ESP_LOGI(TAG, "Registered sub-device '%s' (id=0x%08X)", prefix.c_str(), fnv1a_hash(mac_string_));
 #endif
 
-  // Helper lambda to create a sensor if not already set
-  auto make_sensor = [&](sensor::Sensor **target, const std::string &name) {
+  // Pre-compute entity_fields bitfields for each sensor type
+  uint32_t voltage_fields = sma_entity_fields(SMA_DC_IDX_VOLTAGE, SMA_UOM_IDX_V, SMA_ICON_IDX_FLASH);
+  uint32_t current_fields = sma_entity_fields(SMA_DC_IDX_CURRENT, SMA_UOM_IDX_A, SMA_ICON_IDX_FLASH);
+  uint32_t power_fields = sma_entity_fields(SMA_DC_IDX_POWER, SMA_UOM_IDX_W, SMA_ICON_IDX_FLASH);
+  uint32_t freq_fields = sma_entity_fields(SMA_DC_IDX_FREQUENCY, SMA_UOM_IDX_HZ, SMA_ICON_IDX_SINE);
+  uint32_t energy_fields = sma_entity_fields(SMA_DC_IDX_ENERGY, SMA_UOM_IDX_KWH, SMA_ICON_IDX_SOLAR);
+  uint32_t temp_fields = sma_entity_fields(SMA_DC_IDX_TEMPERATURE, SMA_UOM_IDX_C, SMA_ICON_IDX_THERMO);
+  uint32_t signal_fields = sma_entity_fields(SMA_DC_IDX_SIGNAL_STRENGTH, SMA_UOM_IDX_PERCENT, SMA_ICON_IDX_BT);
+  uint32_t duration_fields = sma_entity_fields(SMA_DC_IDX_DURATION, SMA_UOM_IDX_H, SMA_ICON_IDX_TIMER);
+  // entity_category = 2 (diagnostic) in bits 26-27
+  uint32_t diag_fields = sma_entity_fields(0, 0, 0, 2);
+
+  // Helper: create a sensor with metadata
+  auto make_sensor = [&](sensor::Sensor **target, const std::string &name,
+                         uint32_t fields, sensor::StateClass sc, int8_t decimals) {
     if (*target == nullptr) {
 #ifdef USE_DEVICES
-      auto *s = new DynamicSensor(name, ha_device_);
+      auto *s = new DynamicSensor(name, fields, ha_device_);
 #else
-      auto *s = new DynamicSensor(name);
+      auto *s = new DynamicSensor(name, fields);
 #endif
+      s->set_state_class(sc);
+      s->set_accuracy_decimals(decimals);
       App.register_sensor(s);
       *target = s;
       ESP_LOGD(TAG, "  Sensor '%s' key=0x%08X", name.c_str(), s->get_object_id_hash());
@@ -856,65 +877,78 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
 
   // AC phase sensors
   for (int i = 0; i < 3; i++) {
-    char phase = 'A' + i;
-    make_sensor(&phases_[i].voltage, prefix + " Voltage L" + std::to_string(i + 1));
-    make_sensor(&phases_[i].current, prefix + " Current L" + std::to_string(i + 1));
-    make_sensor(&phases_[i].active_power, prefix + " Power L" + std::to_string(i + 1));
+    make_sensor(&phases_[i].voltage, "Voltage L" + std::to_string(i + 1),
+                voltage_fields, sensor::STATE_CLASS_MEASUREMENT, 1);
+    make_sensor(&phases_[i].current, "Current L" + std::to_string(i + 1),
+                current_fields, sensor::STATE_CLASS_MEASUREMENT, 2);
+    make_sensor(&phases_[i].active_power, "Power L" + std::to_string(i + 1),
+                power_fields, sensor::STATE_CLASS_MEASUREMENT, 0);
   }
 
   // DC PV sensors
   for (int i = 0; i < 2; i++) {
     std::string n = std::to_string(i + 1);
-    make_sensor(&pvs_[i].voltage, prefix + " DC Voltage MPPT" + n);
-    make_sensor(&pvs_[i].current, prefix + " DC Current MPPT" + n);
-    make_sensor(&pvs_[i].active_power, prefix + " DC Power MPPT" + n);
+    make_sensor(&pvs_[i].voltage, "DC Voltage MPPT" + n,
+                voltage_fields, sensor::STATE_CLASS_MEASUREMENT, 1);
+    make_sensor(&pvs_[i].current, "DC Current MPPT" + n,
+                current_fields, sensor::STATE_CLASS_MEASUREMENT, 2);
+    make_sensor(&pvs_[i].active_power, "DC Power MPPT" + n,
+                power_fields, sensor::STATE_CLASS_MEASUREMENT, 0);
   }
 
   // Scalar sensors
-  make_sensor(&grid_frequency_sensor_, prefix + " Grid Frequency");
-  make_sensor(&today_production_, prefix + " Daily Energy");
-  make_sensor(&total_energy_production_, prefix + " Total Energy");
-  make_sensor(&inverter_module_temp_, prefix + " Temperature");
-  make_sensor(&bt_signal_strength_, prefix + " BT Signal");
-  make_sensor(&today_generation_time_, prefix + " Daily Generation Time");
-  make_sensor(&total_generation_time_, prefix + " Total Generation Time");
+  make_sensor(&grid_frequency_sensor_, "Grid Frequency",
+              freq_fields, sensor::STATE_CLASS_MEASUREMENT, 2);
+  make_sensor(&today_production_, "Energy Today",
+              energy_fields, sensor::STATE_CLASS_TOTAL_INCREASING, 2);
+  make_sensor(&total_energy_production_, "Total Energy",
+              energy_fields, sensor::STATE_CLASS_TOTAL_INCREASING, 1);
+  make_sensor(&inverter_module_temp_, "Temperature",
+              temp_fields, sensor::STATE_CLASS_MEASUREMENT, 1);
+  make_sensor(&bt_signal_strength_, "Signal Strength",
+              signal_fields, sensor::STATE_CLASS_MEASUREMENT, 0);
+  make_sensor(&today_generation_time_, "Operating Time Today",
+              duration_fields, sensor::STATE_CLASS_TOTAL_INCREASING, 2);
+  make_sensor(&total_generation_time_, "Total Operating Time",
+              duration_fields, sensor::STATE_CLASS_TOTAL, 0);
 
-  // Text sensors
+  // Text sensors (diagnostic category)
 #ifdef USE_TEXT_SENSOR
   {
-    auto make_ts = [&](text_sensor::TextSensor **target, const std::string &name) {
+    auto make_ts = [&](text_sensor::TextSensor **target, const std::string &name,
+                       uint32_t fields = 0) {
       if (*target == nullptr) {
 #ifdef USE_DEVICES
-        auto *s = new DynamicTextSensor(name, ha_device_);
+        auto *s = new DynamicTextSensor(name, fields, ha_device_);
 #else
-        auto *s = new DynamicTextSensor(name);
+        auto *s = new DynamicTextSensor(name, fields);
 #endif
         App.register_text_sensor(s);
         *target = s;
         ESP_LOGD(TAG, "  TextSensor '%s' key=0x%08X", name.c_str(), s->get_object_id_hash());
       }
     };
-    make_ts(&status_text_sensor_, prefix + " Status");
-    make_ts(&serial_number_, prefix + " Serial");
-    make_ts(&software_version_, prefix + " Software Version");
-    make_ts(&device_type_, prefix + " Device Type");
-    make_ts(&device_class_, prefix + " Device Class");
+    make_ts(&status_text_sensor_, "Status");
+    make_ts(&serial_number_, "Serial Number", diag_fields);
+    make_ts(&software_version_, "Firmware Version", diag_fields);
+    make_ts(&device_type_, "Device Type", diag_fields);
+    make_ts(&device_class_, "Device Class", diag_fields);
+    make_ts(&mac_address_sensor_, "MAC Address", diag_fields);
   }
 #endif
 
-  // Binary sensor
+  // Binary sensor (grid relay)
 #ifdef USE_BINARY_SENSOR
   if (grid_relay_ == nullptr) {
-    std::string relay_name = prefix + " Grid Relay";
+    uint32_t relay_fields = sma_entity_fields(SMA_DC_IDX_POWER, 0, SMA_ICON_IDX_RELAY);
 #ifdef USE_DEVICES
-    auto *s = new DynamicBinarySensor(relay_name, ha_device_);
+    auto *s = new DynamicBinarySensor("Grid Relay", relay_fields, ha_device_);
 #else
-    auto *s = new DynamicBinarySensor(relay_name);
+    auto *s = new DynamicBinarySensor("Grid Relay", relay_fields);
 #endif
     App.register_binary_sensor(s);
     grid_relay_ = s;
-    ESP_LOGD(TAG, "  BinarySensor '%s' key=0x%08X", relay_name.c_str(),
-             s->get_object_id_hash());
+    ESP_LOGD(TAG, "  BinarySensor 'Grid Relay' key=0x%08X", s->get_object_id_hash());
   }
 #endif
 
