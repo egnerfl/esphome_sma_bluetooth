@@ -20,6 +20,7 @@ CONF_INVERTERS = "inverters"
 CONF_MAC_ADDRESS = "mac_address"
 CONF_PASSWORD = "password"
 CONF_NAME = "name"
+CONF_MAX_DEVICES = "max_devices"
 
 InverterConfig = sma_bluetooth_ns.struct("InverterConfig")
 
@@ -41,6 +42,7 @@ CONFIG_SCHEMA = cv.Schema(
         ): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_PASSWORDS): cv.ensure_list(cv.string),
         cv.Optional(CONF_INVERTERS): cv.ensure_list(INVERTER_CONFIG_SCHEMA),
+        cv.Optional(CONF_MAX_DEVICES, default=10): cv.int_range(min=1, max=50),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -84,16 +86,15 @@ async def to_code(config):
 
     # Enable sub-device support so each inverter appears as a separate
     # device in Home Assistant (requires ESPHome >= 2025.7.0).
+    max_devices = config[CONF_MAX_DEVICES]
     cg.add_define("USE_DEVICES")
-    cg.add_define("ESPHOME_DEVICE_COUNT", 15)
+    cg.add_define("ESPHOME_DEVICE_COUNT", max_devices + 5)
 
     # Reserve StaticVector capacity for runtime-created entities.
     # Autodiscovery creates ~22 sensors + 6 text + 1 binary per inverter.
-    # We inflate the platform counts so ESPHome's auto-generated
-    # ESPHOME_ENTITY_*_COUNT defines include headroom for up to 10 inverters.
-    for _ in range(220):  # 22 sensors x 10 inverters
+    for _ in range(22 * max_devices):
         CORE.register_platform_component("sensor", None)
-    for _ in range(60):   # 6 text sensors x 10 inverters
+    for _ in range(6 * max_devices):
         CORE.register_platform_component("text_sensor", None)
-    for _ in range(10):   # 1 binary sensor x 10 inverters
+    for _ in range(1 * max_devices):
         CORE.register_platform_component("binary_sensor", None)
