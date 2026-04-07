@@ -101,6 +101,13 @@ class SmaBluetoothHub : public Component {
   // Night mode
   bool is_nighttime() const;
 
+  // Pre-create devices/sensors during setup (before API connects)
+  void pre_create_devices_();
+
+  // NVS cache for discovered inverter MACs (survive reboots)
+  void save_cached_inverters_();
+  void restore_cached_inverters_();
+
   // Registered devices
   std::vector<SmaInverterDevice *> devices_;
 
@@ -128,6 +135,7 @@ class SmaBluetoothHub : public Component {
   uint32_t inter_inverter_delay_ms_{5000};
   std::vector<std::string> passwords_;
   std::vector<InverterConfig> inverter_configs_;
+  std::vector<InverterConfig> cached_inverter_configs_;  // restored from NVS
 
   // Singleton instance for static callbacks
   static SmaBluetoothHub *instance_;

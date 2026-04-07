@@ -762,11 +762,13 @@ void SmaInverterDevice::publish_sensor(binary_sensor::BinarySensor *s, bool v) {
 }
 #endif
 
-void SmaInverterDevice::publish_sensors() {
+bool SmaInverterDevice::publish_sensors() {
   // Create auto-sensors on main loop if BT task flagged it
+  bool sensors_created = false;
   if (pending_auto_sensors_) {
     pending_auto_sensors_ = false;
     create_auto_sensors(pending_auto_sensor_prefix_);
+    sensors_created = true;
   }
 
   publish_sensor(today_production_, disp_data_.EToday);
@@ -814,6 +816,7 @@ void SmaInverterDevice::publish_sensors() {
 #ifdef USE_BINARY_SENSOR
   publish_sensor(grid_relay_, inv_data_.GridRelay == 51);  // 51 = "Closed"
 #endif
+  return sensors_created;
 }
 
 // ============================================================

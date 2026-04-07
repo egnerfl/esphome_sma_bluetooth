@@ -5,6 +5,8 @@
 #include "esphome/core/application.h"
 #include "esphome/core/log.h"
 #include "esp_idf_version.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 namespace esphome {
 namespace sma_bluetooth {
@@ -27,6 +29,13 @@ void SmaBluetoothHub::setup() {
     passwords_.push_back("1111");
   }
 
+  // Restore cached inverter MACs from NVS (for autodiscovery persistence across reboots)
+  restore_cached_inverters_();
+
+  // Pre-create devices + sensors for all known inverters (configured or cached)
+  // so they are registered BEFORE the API sends list_entities to HA.
+  pre_create_devices_();
+
   if (!init_bt_stack()) {
     ESP_LOGE(TAG, "BT stack init failed");
     mark_failed();
@@ -45,11 +54,24 @@ void SmaBluetoothHub::loop() {
   App.feed_wdt();
 
   // Publish sensor data from any device that has fresh data
+  bool new_sensors_created = false;
   for (auto *device : devices_) {
     if (device->is_data_fresh()) {
-      device->publish_sensors();
+      if (device->publish_sensors()) {
+        new_sensors_created = true;
+      }
       device->clear_data_fresh();
     }
+  }
+
+  // If new auto-sensors were just created at runtime, cache the MAC to NVS
+  // and schedule a reboot so HA re-enumerates entities.
+  if (new_sensors_created) {
+    save_cached_inverters_();
+    ESP_LOGW(TAG, "New sensors created — rebooting in 3s so Home Assistant discovers them...");
+    this->set_timeout("reboot_for_sensors", 3000, []() {
+      App.safe_reboot();
+    });
   }
 
   // Monitor task health
@@ -570,6 +592,120 @@ void SmaBluetoothHub::bt_task_loop() {
   ESP_LOGI(TTAG, "BT task stopping");
   bt_task_handle_ = nullptr;
   vTaskDelete(nullptr);
+}
+
+// ============================================================
+//  NVS cache — persist discovered inverter MACs across reboots
+// ============================================================
+
+static const char *NVS_NAMESPACE = "sma_bt";
+static const char *NVS_KEY_COUNT = "inv_count";
+// Keys: "inv_mac_0", "inv_mac_1", ... store MAC strings
+// Keys: "inv_name_0", "inv_name_1", ... store name prefixes
+
+void SmaBluetoothHub::save_cached_inverters_() {
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "NVS open failed: %s", esp_err_to_name(err));
+    return;
+  }
+
+  uint8_t count = (uint8_t) devices_.size();
+  nvs_set_u8(handle, NVS_KEY_COUNT, count);
+
+  for (uint8_t i = 0; i < count; i++) {
+    char key_mac[16], key_name[16];
+    snprintf(key_mac, sizeof(key_mac), "inv_mac_%u", i);
+    snprintf(key_name, sizeof(key_name), "inv_name_%u", i);
+    nvs_set_str(handle, key_mac, devices_[i]->mac_string().c_str());
+    nvs_set_str(handle, key_name, devices_[i]->name_prefix().c_str());
+  }
+
+  nvs_commit(handle);
+  nvs_close(handle);
+  ESP_LOGI(TAG, "Cached %u inverter(s) to NVS", count);
+}
+
+void SmaBluetoothHub::restore_cached_inverters_() {
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+  if (err != ESP_OK) {
+    ESP_LOGD(TAG, "No NVS cache found (first boot?)");
+    return;
+  }
+
+  uint8_t count = 0;
+  if (nvs_get_u8(handle, NVS_KEY_COUNT, &count) != ESP_OK || count == 0) {
+    nvs_close(handle);
+    return;
+  }
+
+  for (uint8_t i = 0; i < count; i++) {
+    char key_mac[16], key_name[16];
+    snprintf(key_mac, sizeof(key_mac), "inv_mac_%u", i);
+    snprintf(key_name, sizeof(key_name), "inv_name_%u", i);
+
+    char mac_buf[20] = {0};
+    char name_buf[64] = {0};
+    size_t mac_len = sizeof(mac_buf);
+    size_t name_len = sizeof(name_buf);
+
+    if (nvs_get_str(handle, key_mac, mac_buf, &mac_len) == ESP_OK &&
+        nvs_get_str(handle, key_name, name_buf, &name_len) == ESP_OK) {
+      InverterConfig cfg;
+      cfg.mac_string = mac_buf;
+      cfg.name = name_buf;
+      cfg.parse_mac_from_string();
+      cached_inverter_configs_.push_back(cfg);
+      ESP_LOGI(TAG, "Restored cached inverter: %s (%s)", name_buf, mac_buf);
+    }
+  }
+
+  nvs_close(handle);
+}
+
+// ============================================================
+//  Pre-create devices + sensors during setup()
+// ============================================================
+
+void SmaBluetoothHub::pre_create_devices_() {
+  // Merge configured inverters and cached (discovered) inverters.
+  // Configured entries take priority; cached ones fill in the rest.
+  std::vector<InverterConfig *> to_create;
+
+  for (auto &cfg : inverter_configs_) {
+    to_create.push_back(&cfg);
+  }
+
+  for (auto &cached : cached_inverter_configs_) {
+    // Skip if already in configured list
+    bool already = false;
+    for (const auto &cfg : inverter_configs_) {
+      if (cfg.mac_string == cached.mac_string) {
+        already = true;
+        break;
+      }
+    }
+    if (!already) {
+      to_create.push_back(&cached);
+    }
+  }
+
+  for (auto *cfg : to_create) {
+    // Create the device
+    auto *dev = new SmaInverterDevice();
+    dev->set_mac_address(cfg->mac_string);
+    if (!cfg->password.empty()) dev->set_password(cfg->password);
+    if (!cfg->name.empty()) dev->set_name_prefix(cfg->name);
+
+    // Create sensors immediately so they're registered before API connects
+    std::string prefix = cfg->name.empty() ? ("SMA " + cfg->mac_string) : cfg->name;
+    dev->create_auto_sensors(prefix);
+
+    register_device(dev);
+    ESP_LOGI(TAG, "Pre-created device + sensors: %s (%s)", prefix.c_str(), cfg->mac_string.c_str());
+  }
 }
 
 }  // namespace sma_bluetooth

@@ -98,7 +98,8 @@ class SmaInverterDevice {
   bool poll(SmaBluetoothHub *hub);
 
   // Called from main loop to publish cached data to ESPHome sensors
-  void publish_sensors();
+  // Returns true if new auto-sensors were just created (caller should reboot)
+  bool publish_sensors();
 
   // Create auto-sensors for autodiscovery mode
   void create_auto_sensors(const std::string &prefix);
