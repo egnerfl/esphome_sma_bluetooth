@@ -8,6 +8,7 @@
 #include "esphome/core/log.h"
 
 #include <algorithm>
+#include <ctime>
 
 namespace esphome {
 namespace sma_bluetooth {
@@ -788,7 +789,31 @@ bool SmaInverterDevice::publish_sensors() {
     sensors_created = true;
   }
 
-  publish_sensor(today_production_, disp_data_.EToday);
+  // Compute EToday from ETotal delta if inverter doesn't report MeteringDyWhOut
+  if (inv_data_.ETotal > 0) {
+    if (inv_data_.EToday > 0) {
+      // Inverter reports daily energy natively
+      publish_sensor(today_production_, disp_data_.EToday);
+    } else {
+      // Compute from ETotal baseline — reset at midnight
+      time_t now = time(nullptr);
+      struct tm tm_now;
+      localtime_r(&now, &tm_now);
+      uint8_t today = (now > 86400) ? tm_now.tm_mday : 0;  // 0 if time not synced yet
+
+      if (today > 0 && today != etotal_baseline_day_) {
+        // New day (or first run) — set baseline
+        etotal_baseline_ = inv_data_.ETotal;
+        etotal_baseline_day_ = today;
+        ESP_LOGD(TAG, "[%s] EToday baseline reset: ETotal=%llu Wh (day=%u)",
+                 mac_string_.c_str(), (unsigned long long)etotal_baseline_, today);
+      }
+      if (etotal_baseline_ > 0 && inv_data_.ETotal >= etotal_baseline_) {
+        float e_today_kwh = (float)(inv_data_.ETotal - etotal_baseline_) / 1000.0f;
+        publish_sensor(today_production_, e_today_kwh);
+      }
+    }
+  }
   publish_sensor(total_energy_production_, disp_data_.ETotal);
   publish_sensor(grid_frequency_sensor_, disp_data_.GridFreq);
 

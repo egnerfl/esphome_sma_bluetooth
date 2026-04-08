@@ -239,6 +239,10 @@ class SmaInverterDevice {
   uint32_t last_poll_ms_{0};
   uint32_t consecutive_errors_{0};
 
+  // EToday computation: ETotal baseline at start of day
+  uint64_t etotal_baseline_{0};       // ETotal (Wh) at start of current day
+  uint8_t  etotal_baseline_day_{0};   // day-of-month when baseline was set (1-31, 0=unset)
+
   // Protocol constants for this device
   const uint16_t app_susyid_{125};
   uint32_t app_serial_{0};
