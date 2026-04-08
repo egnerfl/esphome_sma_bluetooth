@@ -846,7 +846,7 @@ bool SmaInverterDevice::publish_sensors() {
 
   // Raw data JSON for debugging
   if (raw_json_ != nullptr) {
-    char buf[768];
+    char buf[1024];
     snprintf(buf, sizeof(buf),
       "{\"Serial\":%lu,\"SUSyID\":%u,\"NetID\":%u,"
       "\"Pac\":%ld,\"Pac1\":%ld,\"Pac2\":%ld,\"Pac3\":%ld,"
@@ -876,7 +876,11 @@ bool SmaInverterDevice::publish_sensors() {
   }
 #endif
 #ifdef USE_BINARY_SENSOR
-  publish_sensor(grid_relay_, inv_data_.GridRelay == 51);  // 51 = "Closed"
+  // Only publish grid connection if relay status was actually returned
+  // (code 51 = Closed/connected, 311 = Open/disconnected, 0 = query not supported)
+  if (inv_data_.GridRelay != 0) {
+    publish_sensor(grid_relay_, inv_data_.GridRelay == 51);
+  }
 #endif
   return sensors_created;
 }
