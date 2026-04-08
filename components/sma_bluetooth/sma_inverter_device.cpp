@@ -1021,7 +1021,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
     make_ts(&device_type_, "Device Type", diag_fields);
     make_ts(&device_class_, "Device Class", diag_fields);
     make_ts(&mac_address_sensor_, "MAC Address", diag_fields);
-    make_ts(&raw_json_, "Raw Data", diag_fields | (1u << 25));  // disabled_by_default
+    make_ts(&raw_json_, "Raw Data", diag_fields);
   }
 #endif
 
