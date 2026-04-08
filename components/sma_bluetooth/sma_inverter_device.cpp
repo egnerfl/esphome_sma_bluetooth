@@ -53,25 +53,38 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   pkt_id_ = 1;
   hub->bt_flush_rx();
 
-  // Initialize SMA connection
+  // Initialize SMA connection (retry once on failure — some inverters
+  // drop the BT connection during the init handshake intermittently)
   E_RC rc = initialize_connection(hub);
   if (rc != E_OK) {
-    ESP_LOGE(TAG, "[%s] init failed: %d", mac_string_.c_str(), rc);
+    ESP_LOGD(TAG, "[%s] init failed: %d, retrying...", mac_string_.c_str(), rc);
     hub->spp_disconnect();
-    return false;
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    if (!hub->spp_connect(bt_address_)) return false;
+    pkt_id_ = 1;
+    hub->bt_flush_rx();
+    rc = initialize_connection(hub);
+    if (rc != E_OK) {
+      ESP_LOGE(TAG, "[%s] init failed after retry: %d", mac_string_.c_str(), rc);
+      hub->spp_disconnect();
+      return false;
+    }
   }
 
   // Logon — try passwords
   bool logged_on = false;
   if (password_set_) {
-    // Use specific password
+    // Use specific/cached password
     rc = logon(hub, password_, USERGROUP);
     if (rc == E_OK) logged_on = true;
   }
 
   if (!logged_on) {
-    // Try default passwords
+    // Try default passwords from hub config
     for (const auto &pw : hub->get_passwords()) {
+      // Skip if same as already-tried cached password
+      if (password_set_ && pw == password_) continue;
+
       rc = logon(hub, pw.c_str(), USERGROUP);
       if (rc == E_OK) {
         set_working_password(pw);
@@ -82,7 +95,7 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
                mac_string_.c_str(), pw.c_str());
       // Reconnect needed after failed logon
       hub->spp_disconnect();
-      vTaskDelay(pdMS_TO_TICKS(2000));
+      vTaskDelay(pdMS_TO_TICKS(3000));
       if (!hub->spp_connect(bt_address_)) return false;
       pkt_id_ = 1;
       hub->bt_flush_rx();
@@ -122,9 +135,11 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   get_bt_signal_strength(hub);
 
   // Query fast types (power, voltage, energy, frequency)
+  int fast_failures = 0;
   for (int i = 0; i < NUM_FAST_TYPES; i++) {
     rc = get_inverter_data(hub, FAST_QUERY_TYPES[i]);
     if (rc != E_OK) {
+      fast_failures++;
       ESP_LOGD(TAG, "[%s] Fast query %d failed: %d", mac_string_.c_str(),
                FAST_QUERY_TYPES[i], rc);
     }
@@ -132,9 +147,11 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   }
 
   // Query slow types (status, relay, temp)
+  int slow_failures = 0;
   for (int i = 0; i < NUM_SLOW_TYPES; i++) {
     rc = get_inverter_data(hub, SLOW_QUERY_TYPES[i]);
     if (rc != E_OK) {
+      slow_failures++;
       ESP_LOGD(TAG, "[%s] Slow query %d failed: %d", mac_string_.c_str(),
                SLOW_QUERY_TYPES[i], rc);
     }
@@ -147,6 +164,16 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   // Disconnect
   logoff(hub);
   hub->spp_disconnect();
+
+  // If ALL queries failed, the session was stuck — report failure so the
+  // hub's backoff/retry logic kicks in rather than publishing stale data.
+  int total_queries = NUM_FAST_TYPES + NUM_SLOW_TYPES;
+  int total_failures = fast_failures + slow_failures;
+  if (total_failures >= total_queries) {
+    ESP_LOGW(TAG, "[%s] All %d queries failed — session may be stuck",
+             mac_string_.c_str(), total_queries);
+    return false;
+  }
 
   // Signal main loop
   data_fresh_ = true;
@@ -161,9 +188,18 @@ E_RC SmaInverterDevice::initialize_connection(SmaBluetoothHub *hub) {
   ESP_LOGD(TAG, "[%s] Initializing SMA connection", mac_string_.c_str());
 
   // Step 1: Receive packet → extract NetID
-  get_packet(hub, inv_data_.btAddress, 2);
+  if (get_packet(hub, inv_data_.btAddress, 2) != E_OK) {
+    ESP_LOGD(TAG, "[%s] Init step 1 failed (no announcement)", mac_string_.c_str());
+    return E_INIT;
+  }
   inv_data_.NetID = pkt_buf_[22];
   ESP_LOGD(TAG, "[%s] NetID=0x%02X", mac_string_.c_str(), inv_data_.NetID);
+
+  // Check connection still alive before sending
+  if (!hub->is_bt_connected()) {
+    ESP_LOGD(TAG, "[%s] Connection lost after step 1", mac_string_.c_str());
+    return E_INIT;
+  }
 
   // Step 2: Send NetID config
   write_packet_header(pkt_buf_, 0x02, inv_data_.btAddress);
@@ -175,7 +211,10 @@ E_RC SmaInverterDevice::initialize_connection(SmaBluetoothHub *hub) {
   hub->bt_send_packet(pkt_buf_, pkt_buf_pos_);
 
   // Step 3: Receive response → extract ESP BT address
-  get_packet(hub, inv_data_.btAddress, 5);
+  if (get_packet(hub, inv_data_.btAddress, 5) != E_OK) {
+    ESP_LOGD(TAG, "[%s] Init step 3 failed (no NetID response)", mac_string_.c_str());
+    return E_INIT;
+  }
   memcpy(esp_bt_address_, pkt_buf_ + 26, 6);
   ESP_LOGD(TAG, "[%s] ESP BT addr: %02X:%02X:%02X:%02X:%02X:%02X",
            mac_string_.c_str(),

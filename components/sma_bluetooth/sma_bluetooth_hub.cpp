@@ -533,6 +533,7 @@ void SmaBluetoothHub::bt_task_loop() {
 
   ESP_LOGI(TTAG, "SPP ready, starting poll loop");
   uint32_t last_discovery_ms = 0;
+  bool nvs_passwords_saved = false;
 
   while (!stop_task_) {
     // Night mode check
@@ -612,6 +613,12 @@ void SmaBluetoothHub::bt_task_loop() {
     // (at night all inverters are off, so polls fail — don't signal then).
     if (any_polled) {
       poll_cycle_complete_ = true;
+
+      // Save working passwords to NVS after first successful cycle
+      if (!nvs_passwords_saved) {
+        save_cached_inverters_();
+        nvs_passwords_saved = true;
+      }
     }
 
     if (!any_polled) {
@@ -633,6 +640,7 @@ static const char *NVS_NAMESPACE = "sma_bt";
 static const char *NVS_KEY_COUNT = "inv_count";
 // Keys: "inv_mac_0", "inv_mac_1", ... store MAC strings
 // Keys: "inv_name_0", "inv_name_1", ... store name prefixes
+// Keys: "inv_pw_0", "inv_pw_1", ... store working passwords
 
 void SmaBluetoothHub::save_cached_inverters_() {
   nvs_handle_t handle;
@@ -649,6 +657,13 @@ void SmaBluetoothHub::save_cached_inverters_() {
     char key_mac[16];
     snprintf(key_mac, sizeof(key_mac), "inv_mac_%u", i);
     nvs_set_str(handle, key_mac, devices_[i]->mac_string().c_str());
+
+    // Save working password if known
+    if (devices_[i]->has_password()) {
+      char key_pw[16];
+      snprintf(key_pw, sizeof(key_pw), "inv_pw_%u", i);
+      nvs_set_str(handle, key_pw, devices_[i]->password());
+    }
   }
 
   nvs_commit(handle);
@@ -686,6 +701,17 @@ void SmaBluetoothHub::restore_cached_inverters_() {
       InverterConfig cfg;
       cfg.mac_string = mac_buf;
       cfg.parse_mac_from_string();
+
+      // Restore working password if saved
+      char key_pw[16];
+      snprintf(key_pw, sizeof(key_pw), "inv_pw_%u", i);
+      char pw_buf[16] = {0};
+      size_t pw_len = sizeof(pw_buf);
+      if (nvs_get_str(handle, key_pw, pw_buf, &pw_len) == ESP_OK && pw_buf[0] != '\0') {
+        cfg.password = pw_buf;
+        ESP_LOGD(TAG, "  Restored password for inverter[%u]", i);
+      }
+
       cached_inverter_configs_.push_back(cfg);
       ESP_LOGD(TAG, "  Restored cached inverter[%u]: %s", i, mac_buf);
     } else {
