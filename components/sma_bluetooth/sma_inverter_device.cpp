@@ -788,12 +788,6 @@ bool SmaInverterDevice::publish_sensors() {
     sensors_created = true;
   }
 
-  ESP_LOGI(TAG, "[%s] Energy: EToday=%.3f kWh (raw=%llu) ETotal=%.1f kWh (raw=%llu) OpTime=%llu FeedIn=%llu",
-           mac_string_.c_str(),
-           disp_data_.EToday, (unsigned long long)inv_data_.EToday,
-           disp_data_.ETotal, (unsigned long long)inv_data_.ETotal,
-           (unsigned long long)inv_data_.OperationTime, (unsigned long long)inv_data_.FeedInTime);
-
   publish_sensor(today_production_, disp_data_.EToday);
   publish_sensor(total_energy_production_, disp_data_.ETotal);
   publish_sensor(grid_frequency_sensor_, disp_data_.GridFreq);
@@ -839,10 +833,6 @@ bool SmaInverterDevice::publish_sensors() {
   publish_sensor(wakeup_time_, (uint64_t)inv_data_.WakeupTime);
 
 #ifdef USE_TEXT_SENSOR
-  ESP_LOGI(TAG, "[%s] Raw attrs: DevStatus=%lu DeviceType=%lu DeviceClass=%lu GridRelay=%lu",
-           mac_string_.c_str(),
-           (unsigned long)inv_data_.DevStatus, (unsigned long)inv_data_.DeviceType,
-           (unsigned long)inv_data_.DeviceClass, (unsigned long)inv_data_.GridRelay);
   publish_sensor(status_text_sensor_,
                  lookup_status_code(inv_data_.DevStatus));
   publish_sensor(serial_number_, inv_data_.DeviceName);
@@ -853,6 +843,31 @@ bool SmaInverterDevice::publish_sensors() {
                  lookup_status_code(inv_data_.DeviceClass));
   publish_sensor(inverter_time_sensor_, inv_data_.InverterTimestamp);
   publish_sensor(mac_address_sensor_, mac_string_);
+
+  // Raw data JSON for debugging
+  if (raw_json_ != nullptr) {
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+      "{\"Pac\":%ld,\"Pac1\":%ld,\"Pac2\":%ld,\"Pac3\":%ld,"
+      "\"Uac1\":%ld,\"Uac2\":%ld,\"Uac3\":%ld,"
+      "\"Iac1\":%ld,\"Iac2\":%ld,\"Iac3\":%ld,"
+      "\"Pdc1\":%ld,\"Pdc2\":%ld,\"Udc1\":%ld,\"Udc2\":%ld,\"Idc1\":%ld,\"Idc2\":%ld,"
+      "\"Freq\":%ld,\"Temp\":%ld,"
+      "\"EToday\":%llu,\"ETotal\":%llu,"
+      "\"OpTime\":%llu,\"FeedIn\":%llu,"
+      "\"Status\":%lu,\"DevType\":%lu,\"DevClass\":%lu,\"Relay\":%lu}",
+      (long)inv_data_.TotalPac, (long)inv_data_.Pac1, (long)inv_data_.Pac2, (long)inv_data_.Pac3,
+      (long)inv_data_.Uac1, (long)inv_data_.Uac2, (long)inv_data_.Uac3,
+      (long)inv_data_.Iac1, (long)inv_data_.Iac2, (long)inv_data_.Iac3,
+      (long)inv_data_.Pdc1, (long)inv_data_.Pdc2, (long)inv_data_.Udc1, (long)inv_data_.Udc2,
+      (long)inv_data_.Idc1, (long)inv_data_.Idc2,
+      (long)inv_data_.GridFreq, (long)inv_data_.InvTemp,
+      (unsigned long long)inv_data_.EToday, (unsigned long long)inv_data_.ETotal,
+      (unsigned long long)inv_data_.OperationTime, (unsigned long long)inv_data_.FeedInTime,
+      (unsigned long)inv_data_.DevStatus, (unsigned long)inv_data_.DeviceType,
+      (unsigned long)inv_data_.DeviceClass, (unsigned long)inv_data_.GridRelay);
+    raw_json_->publish_state(std::string(buf));
+  }
 #endif
 #ifdef USE_BINARY_SENSOR
   publish_sensor(grid_relay_, inv_data_.GridRelay == 51);  // 51 = "Closed"
@@ -971,6 +986,7 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
     make_ts(&device_type_, "Device Type", diag_fields);
     make_ts(&device_class_, "Device Class", diag_fields);
     make_ts(&mac_address_sensor_, "MAC Address", diag_fields);
+    make_ts(&raw_json_, "Raw Data", diag_fields);
   }
 #endif
 

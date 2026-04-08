@@ -274,6 +274,7 @@ class SmaInverterDevice {
   text_sensor::TextSensor *device_class_{nullptr};
   text_sensor::TextSensor *inverter_time_sensor_{nullptr};
   text_sensor::TextSensor *mac_address_sensor_{nullptr};
+  text_sensor::TextSensor *raw_json_{nullptr};
 #endif
 
 #ifdef USE_BINARY_SENSOR
