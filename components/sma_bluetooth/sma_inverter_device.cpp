@@ -846,26 +846,32 @@ bool SmaInverterDevice::publish_sensors() {
 
   // Raw data JSON for debugging
   if (raw_json_ != nullptr) {
-    char buf[512];
+    char buf[768];
     snprintf(buf, sizeof(buf),
-      "{\"Pac\":%ld,\"Pac1\":%ld,\"Pac2\":%ld,\"Pac3\":%ld,"
+      "{\"Serial\":%lu,\"SUSyID\":%u,\"NetID\":%u,"
+      "\"Pac\":%ld,\"Pac1\":%ld,\"Pac2\":%ld,\"Pac3\":%ld,"
       "\"Uac1\":%ld,\"Uac2\":%ld,\"Uac3\":%ld,"
       "\"Iac1\":%ld,\"Iac2\":%ld,\"Iac3\":%ld,"
       "\"Pdc1\":%ld,\"Pdc2\":%ld,\"Udc1\":%ld,\"Udc2\":%ld,\"Idc1\":%ld,\"Idc2\":%ld,"
-      "\"Freq\":%ld,\"Temp\":%ld,"
+      "\"Freq\":%ld,\"Temp\":%ld,\"Pmax\":%ld,\"Eta\":%ld,"
       "\"EToday\":%llu,\"ETotal\":%llu,"
       "\"OpTime\":%llu,\"FeedIn\":%llu,"
-      "\"Status\":%lu,\"DevType\":%lu,\"DevClass\":%lu,\"Relay\":%lu}",
+      "\"GridOut\":%lu,\"GridIn\":%lu,"
+      "\"Status\":%lu,\"DevType\":%lu,\"DevClass\":%lu,\"Relay\":%lu,"
+      "\"LastTime\":%ld,\"WakeupTime\":%ld}",
+      (unsigned long)inv_data_.Serial, inv_data_.SUSyID, inv_data_.NetID,
       (long)inv_data_.TotalPac, (long)inv_data_.Pac1, (long)inv_data_.Pac2, (long)inv_data_.Pac3,
       (long)inv_data_.Uac1, (long)inv_data_.Uac2, (long)inv_data_.Uac3,
       (long)inv_data_.Iac1, (long)inv_data_.Iac2, (long)inv_data_.Iac3,
       (long)inv_data_.Pdc1, (long)inv_data_.Pdc2, (long)inv_data_.Udc1, (long)inv_data_.Udc2,
       (long)inv_data_.Idc1, (long)inv_data_.Idc2,
-      (long)inv_data_.GridFreq, (long)inv_data_.InvTemp,
+      (long)inv_data_.GridFreq, (long)inv_data_.InvTemp, (long)inv_data_.Pmax, (long)inv_data_.Eta,
       (unsigned long long)inv_data_.EToday, (unsigned long long)inv_data_.ETotal,
       (unsigned long long)inv_data_.OperationTime, (unsigned long long)inv_data_.FeedInTime,
+      (unsigned long)inv_data_.MeteringGridMsTotWOut, (unsigned long)inv_data_.MeteringGridMsTotWIn,
       (unsigned long)inv_data_.DevStatus, (unsigned long)inv_data_.DeviceType,
-      (unsigned long)inv_data_.DeviceClass, (unsigned long)inv_data_.GridRelay);
+      (unsigned long)inv_data_.DeviceClass, (unsigned long)inv_data_.GridRelay,
+      (long)inv_data_.LastTime, (long)inv_data_.WakeupTime);
     raw_json_->publish_state(std::string(buf));
   }
 #endif
