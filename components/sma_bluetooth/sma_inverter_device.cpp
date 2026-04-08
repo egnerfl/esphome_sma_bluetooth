@@ -1001,13 +1001,13 @@ void SmaInverterDevice::create_auto_sensors(const std::string &prefix) {
   if (grid_relay_ == nullptr) {
     uint32_t relay_fields = sma_entity_fields(SMA_DC_IDX_POWER, 0, SMA_ICON_IDX_RELAY);
 #ifdef USE_DEVICES
-    auto *s = new DynamicBinarySensor("Grid Relay", relay_fields, ha_device_);
+    auto *s = new DynamicBinarySensor("Grid Connection", relay_fields, ha_device_);
 #else
-    auto *s = new DynamicBinarySensor("Grid Relay", relay_fields);
+    auto *s = new DynamicBinarySensor("Grid Connection", relay_fields);
 #endif
     App.register_binary_sensor(s);
     grid_relay_ = s;
-    ESP_LOGD(TAG, "  BinarySensor 'Grid Relay' key=0x%08X", s->get_object_id_hash());
+    ESP_LOGD(TAG, "  BinarySensor 'Grid Connection' key=0x%08X", s->get_object_id_hash());
   }
 #endif
 

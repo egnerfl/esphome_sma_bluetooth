@@ -1,0 +1,27 @@
+{
+  "name": "ESPHome SMA Bluetooth",
+  "image": "ghcr.io/esphome/esphome",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "platformio.platformio-ide",
+        "ms-python.python",
+        "esphome.esphome-vscode"
+      ],
+      "settings": {
+        "C_Cpp.default.includePath": [
+          "${workspaceFolder}/components/**",
+          "${workspaceFolder}/test/**"
+        ],
+        "editor.tabSize": 2,
+        "files.trimTrailingWhitespace": true
+      }
+    }
+  },
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/local_component,type=bind"
+  ],
+  "postCreateCommand": "pip install platformio",
+  "remoteUser": "root"
+}
