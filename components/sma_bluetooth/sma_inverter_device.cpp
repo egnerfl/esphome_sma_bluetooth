@@ -77,7 +77,7 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
         logged_on = true;
         break;
       }
-      ESP_LOGW(TAG, "[%s] Password '%s' failed, trying next...",
+      ESP_LOGD(TAG, "[%s] Password '%s' failed, trying next...",
                mac_string_.c_str(), pw.c_str());
       // Reconnect needed after failed logon
       hub->spp_disconnect();
@@ -243,7 +243,7 @@ E_RC SmaInverterDevice::logon(SmaBluetoothHub *hub, const char *password, uint8_
     return E_OK;
   }
 
-  ESP_LOGW(TAG, "[%s] Logon response mismatch", mac_string_.c_str());
+  ESP_LOGD(TAG, "[%s] Logon response mismatch", mac_string_.c_str());
   return E_INVRESP;
 }
 
@@ -354,7 +354,7 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
       uint16_t rcv_pkt_id = get_u16(pkt_buf_ + 27) & 0x7FFF;
 
       if (pkt_id_ != rcv_pkt_id) {
-        ESP_LOGW(TAG, "PktID mismatch: exp=0x%04X got=0x%04X", pkt_id_, rcv_pkt_id);
+        ESP_LOGD(TAG, "PktID mismatch: exp=0x%04X got=0x%04X", pkt_id_, rcv_pkt_id);
         valid_pkt_id = false;
         pkt_count = 0;
         continue;
@@ -362,7 +362,7 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
 
       if (get_u16(pkt_buf_ + 15) != inv_data_.SUSyID ||
           get_u32(pkt_buf_ + 17) != inv_data_.Serial) {
-        ESP_LOGW(TAG, "Wrong SUSyID/Serial in response");
+        ESP_LOGD(TAG, "Wrong SUSyID/Serial in response");
         continue;
       }
 
@@ -387,7 +387,7 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
 
         if (recordsize == 16) {
           value64_ = get_u64(recptr + 8);
-          ESP_LOGD(TAG, "[%s] rec: code=0x%08X lri=0x%04X dt=%u val64=%llu",
+          ESP_LOGV(TAG, "[%s] rec: code=0x%08X lri=0x%04X dt=%u val64=%llu",
                    mac_string_.c_str(), code, lri, data_type,
                    (unsigned long long)value64_);
           if (is_NaN(value64_) || is_NaN((uint64_t)value64_)) value64_ = 0;
@@ -523,7 +523,7 @@ E_RC SmaInverterDevice::get_packet(SmaBluetoothHub *hub, const uint8_t exp_addr[
 
     // Validate L1 checksum
     if (!((rd_buf_[0] ^ rd_buf_[1] ^ rd_buf_[2]) == rd_buf_[3])) {
-      ESP_LOGW(TAG, "Wrong L1 CRC");
+      ESP_LOGD(TAG, "Wrong L1 CRC");
     }
 
     if (hdr->pkLength > sizeof(L1Hdr)) {
@@ -700,7 +700,7 @@ bool SmaInverterDevice::validate_checksum() {
   }
   fcs ^= 0xFFFF;
   if (get_u16(pkt_buf_ + pkt_buf_pos_ - 3) == fcs) return true;
-  ESP_LOGE(TAG, "Checksum mismatch: got=0x%04X exp=0x%04X", fcs,
+  ESP_LOGD(TAG, "Checksum mismatch: got=0x%04X exp=0x%04X", fcs,
            get_u16(pkt_buf_ + pkt_buf_pos_ - 3));
   return false;
 }

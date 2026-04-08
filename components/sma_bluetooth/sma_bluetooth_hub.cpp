@@ -400,7 +400,7 @@ void SmaBluetoothHub::run_discovery_scan() {
   while (!discovery_complete_ && !stop_task_) {
     vTaskDelay(pdMS_TO_TICKS(500));
     if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(15000)) {
-      ESP_LOGW(TAG, "GAP discovery timeout, cancelling");
+      ESP_LOGD(TAG, "GAP discovery timeout, cancelling");
       esp_bt_gap_cancel_discovery();
       break;
     }
@@ -590,8 +590,13 @@ void SmaBluetoothHub::bt_task_loop() {
         ESP_LOGD(TTAG, "Poll OK for %s", device->mac_string().c_str());
       } else {
         device->increment_errors();
-        ESP_LOGW(TTAG, "Poll FAILED for %s (errors: %u)",
-                 device->mac_string().c_str(), device->consecutive_errors());
+        if (device->consecutive_errors() <= 3) {
+          ESP_LOGD(TTAG, "Poll failed for %s (errors: %u)",
+                   device->mac_string().c_str(), device->consecutive_errors());
+        } else {
+          ESP_LOGW(TTAG, "Poll failed for %s (errors: %u)",
+                   device->mac_string().c_str(), device->consecutive_errors());
+        }
       }
 
       any_polled = true;
@@ -655,13 +660,13 @@ void SmaBluetoothHub::restore_cached_inverters_() {
   nvs_handle_t handle;
   esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
   if (err != ESP_OK) {
-    ESP_LOGW(TAG, "NVS open for read failed: %s (first boot?)", esp_err_to_name(err));
+    ESP_LOGI(TAG, "NVS open for read failed: %s (first boot?)", esp_err_to_name(err));
     return;
   }
 
   uint8_t count = 0;
   if (nvs_get_u8(handle, NVS_KEY_COUNT, &count) != ESP_OK || count == 0) {
-    ESP_LOGW(TAG, "NVS: no cached inverter count (or 0)");
+    ESP_LOGI(TAG, "NVS: no cached inverter count (first boot)");
     nvs_close(handle);
     return;
   }
