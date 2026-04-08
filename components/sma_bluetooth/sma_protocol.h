@@ -219,6 +219,20 @@ struct InverterData {
   uint32_t DeviceType{0};
   uint32_t DeviceClass{0};
   std::string InverterTimestamp;
+
+  // Bitmask tracking which data categories were actually read this cycle.
+  // Prevents publishing zero-initialized values that were never received.
+  uint32_t data_received{0};
+  static constexpr uint32_t DATA_AC_POWER    = (1 << 0);
+  static constexpr uint32_t DATA_AC_VOLTAGE  = (1 << 1);
+  static constexpr uint32_t DATA_DC_POWER    = (1 << 2);
+  static constexpr uint32_t DATA_DC_VOLTAGE  = (1 << 3);
+  static constexpr uint32_t DATA_ENERGY      = (1 << 4);
+  static constexpr uint32_t DATA_FREQUENCY   = (1 << 5);
+  static constexpr uint32_t DATA_TEMPERATURE = (1 << 6);
+  static constexpr uint32_t DATA_STATUS      = (1 << 7);
+  static constexpr uint32_t DATA_OPTIME      = (1 << 8);
+  static constexpr uint32_t DATA_AC_TOTAL    = (1 << 9);
 };
 
 // ---------------------------------------------------------------------------
