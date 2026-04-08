@@ -56,6 +56,25 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   // Clear data_received bitmask — only data actually read this cycle gets published
   inv_data_.data_received = 0;
 
+  // Zero all measurement fields to prevent stale values from persisting across
+  // failed queries. Identity fields (btAddress, SUSyID, Serial, NetID) and
+  // strings (DeviceName, SWVersion) are preserved — they don't change between polls.
+  inv_data_.Pmax = 0;   inv_data_.TotalPac = 0;
+  inv_data_.Pac = 0;    inv_data_.Pac1 = 0;   inv_data_.Pac2 = 0;   inv_data_.Pac3 = 0;
+  inv_data_.Uac1 = 0;   inv_data_.Uac2 = 0;   inv_data_.Uac3 = 0;
+  inv_data_.Iac1 = 0;   inv_data_.Iac2 = 0;   inv_data_.Iac3 = 0;
+  inv_data_.Pdc1 = 0;   inv_data_.Pdc2 = 0;
+  inv_data_.Udc1 = 0;   inv_data_.Udc2 = 0;
+  inv_data_.Idc1 = 0;   inv_data_.Idc2 = 0;
+  inv_data_.GridFreq = 0;  inv_data_.Eta = 0;    inv_data_.InvTemp = 0;
+  inv_data_.EToday = 0; inv_data_.ETotal = 0;  inv_data_.LastTime = 0;
+  inv_data_.OperationTime = 0;  inv_data_.FeedInTime = 0;
+  inv_data_.DevStatus = 0;      inv_data_.GridRelay = 0;
+  inv_data_.MeteringGridMsTotWOut = 0;  inv_data_.MeteringGridMsTotWIn = 0;
+  inv_data_.WakeupTime = 0;
+
+  disp_data_ = DisplayData{};
+
   // Initialize SMA connection (retry once on failure — some inverters
   // drop the BT connection during the init handshake intermittently)
   E_RC rc = initialize_connection(hub);
@@ -414,7 +433,15 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
 
   // Receive and parse response
   bool valid_pkt_id = false;
+  uint8_t outer_attempts = 0;
+  static const uint8_t MAX_OUTER_ATTEMPTS = 5;
   do {
+    if (++outer_attempts > MAX_OUTER_ATTEMPTS) {
+      ESP_LOGW(TAG, "[%s] No valid pkt_id after %u attempts, aborting query",
+               mac_string_.c_str(), MAX_OUTER_ATTEMPTS);
+      return E_NODATA;
+    }
+
     uint8_t pkt_count = 0;
     do {
       inv_data_.status = get_packet(hub, inv_data_.btAddress, 0x0001);
@@ -841,33 +868,50 @@ bool SmaInverterDevice::is_valid_sender(const uint8_t exp[6], const uint8_t is[6
 void SmaInverterDevice::handle_missing_values() {
   auto &d = disp_data_;
   auto &r = inv_data_;
+  uint32_t dr = r.data_received;
 
-  // DC power: fallback from V × A when SpotDCPower query fails
-  if (d.Pdc1 == 0.0f && d.Udc1 != 0.0f && d.Idc1 != 0.0f) {
-    d.Pdc1 = d.Udc1 * d.Idc1 / 1000.0f;  // kW
-    r.Pdc1 = (int32_t)(d.Udc1 * d.Idc1);  // W
-    d.needsMissingValues = true;
+  // DC power: fallback from V × A only when SpotDCPower was NOT received
+  // but DC voltage/current data WAS received.
+  bool has_dc_power = (dr & InverterData::DATA_DC_POWER);
+  bool has_dc_vi    = (dr & InverterData::DATA_DC_VOLTAGE);
+  if (!has_dc_power && has_dc_vi) {
+    if (d.Udc1 != 0.0f || d.Idc1 != 0.0f) {
+      d.Pdc1 = d.Udc1 * d.Idc1 / 1000.0f;  // kW
+      r.Pdc1 = (int32_t)(d.Udc1 * d.Idc1);  // W
+      r.data_received |= InverterData::DATA_DC_POWER;
+      d.needsMissingValues = true;
+    }
+    if (d.Udc2 != 0.0f || d.Idc2 != 0.0f) {
+      d.Pdc2 = d.Udc2 * d.Idc2 / 1000.0f;
+      r.Pdc2 = (int32_t)(d.Udc2 * d.Idc2);
+      r.data_received |= InverterData::DATA_DC_POWER;
+      d.needsMissingValues = true;
+    }
   }
-  if (d.Pdc2 == 0.0f && d.Udc2 != 0.0f && d.Idc2 != 0.0f) {
-    d.Pdc2 = d.Udc2 * d.Idc2 / 1000.0f;
-    r.Pdc2 = (int32_t)(d.Udc2 * d.Idc2);
-    d.needsMissingValues = true;
-  }
-  // AC power: fallback from V × A when SpotACPower query fails
-  if (d.Pac1 == 0.0f && d.Uac1 != 0.0f && d.Iac1 != 0.0f) {
-    d.Pac1 = d.Uac1 * d.Iac1 / 1000.0f;
-    r.Pac1 = (int32_t)(d.Uac1 * d.Iac1);
-    d.needsMissingValues = true;
-  }
-  if (d.Pac2 == 0.0f && d.Uac2 != 0.0f && d.Iac2 != 0.0f) {
-    d.Pac2 = d.Uac2 * d.Iac2 / 1000.0f;
-    r.Pac2 = (int32_t)(d.Uac2 * d.Iac2);
-    d.needsMissingValues = true;
-  }
-  if (d.Pac3 == 0.0f && d.Uac3 != 0.0f && d.Iac3 != 0.0f) {
-    d.Pac3 = d.Uac3 * d.Iac3 / 1000.0f;
-    r.Pac3 = (int32_t)(d.Uac3 * d.Iac3);
-    d.needsMissingValues = true;
+
+  // AC power: fallback from V × A only when SpotACPower was NOT received
+  // but AC voltage data WAS received (current is stored under DATA_AC_VOLTAGE).
+  bool has_ac_power = (dr & InverterData::DATA_AC_POWER);
+  bool has_ac_vi    = (dr & InverterData::DATA_AC_VOLTAGE);
+  if (!has_ac_power && has_ac_vi) {
+    if (d.Uac1 != 0.0f || d.Iac1 != 0.0f) {
+      d.Pac1 = d.Uac1 * d.Iac1 / 1000.0f;
+      r.Pac1 = (int32_t)(d.Uac1 * d.Iac1);
+      r.data_received |= InverterData::DATA_AC_POWER;
+      d.needsMissingValues = true;
+    }
+    if (d.Uac2 != 0.0f || d.Iac2 != 0.0f) {
+      d.Pac2 = d.Uac2 * d.Iac2 / 1000.0f;
+      r.Pac2 = (int32_t)(d.Uac2 * d.Iac2);
+      r.data_received |= InverterData::DATA_AC_POWER;
+      d.needsMissingValues = true;
+    }
+    if (d.Uac3 != 0.0f || d.Iac3 != 0.0f) {
+      d.Pac3 = d.Uac3 * d.Iac3 / 1000.0f;
+      r.Pac3 = (int32_t)(d.Uac3 * d.Iac3);
+      r.data_received |= InverterData::DATA_AC_POWER;
+      d.needsMissingValues = true;
+    }
   }
 }
 
