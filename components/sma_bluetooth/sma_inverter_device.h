@@ -238,6 +238,7 @@ class SmaInverterDevice {
   volatile bool data_fresh_{false};
   uint32_t last_poll_ms_{0};
   uint32_t consecutive_errors_{0};
+  uint32_t consecutive_stuck_{0};  // tracks "all queries failed" cycles specifically
 
   // EToday computation: ETotal baseline at start of day
   uint64_t etotal_baseline_{0};       // ETotal (Wh) at start of current day

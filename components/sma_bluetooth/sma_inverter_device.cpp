@@ -113,6 +113,39 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
     return false;
   }
 
+  // Recovery: after 3+ consecutive stuck sessions (all queries fail despite
+  // successful logon), do a logoff-only cycle to clear the inverter's BT state,
+  // then reconnect fresh. The inverter's BT stack sometimes accepts logins but
+  // refuses data queries until the session is explicitly torn down and rebuilt.
+  if (consecutive_stuck_ >= 3) {
+    ESP_LOGI(TAG, "[%s] Stuck recovery: logoff-only cycle (%u stuck sessions)",
+             mac_string_.c_str(), consecutive_stuck_);
+    logoff(hub);
+    hub->spp_disconnect();
+    // Longer delay to let the inverter fully reset its BT state
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+    // Reconnect fresh
+    if (!hub->spp_connect(bt_address_)) return false;
+    pkt_id_ = 1;
+    hub->bt_flush_rx();
+    rc = initialize_connection(hub);
+    if (rc != E_OK) {
+      hub->spp_disconnect();
+      return false;
+    }
+    // Re-logon
+    logged_on = false;
+    if (password_set_) {
+      rc = logon(hub, password_, USERGROUP);
+      if (rc == E_OK) logged_on = true;
+    }
+    if (!logged_on) {
+      hub->spp_disconnect();
+      return false;
+    }
+  }
+
   // Query once-types (TypeLabel, SoftwareVersion)
   for (int i = 0; i < NUM_ONCE_TYPES; i++) {
     get_inverter_data(hub, ONCE_QUERY_TYPES[i]);
@@ -173,10 +206,14 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   int total_queries = NUM_FAST_TYPES + NUM_SLOW_TYPES;
   int total_failures = fast_failures + slow_failures;
   if (total_failures >= total_queries) {
-    ESP_LOGW(TAG, "[%s] All %d queries failed — session may be stuck",
-             mac_string_.c_str(), total_queries);
+    consecutive_stuck_++;
+    ESP_LOGW(TAG, "[%s] All %d queries failed — session stuck (stuck count: %u)",
+             mac_string_.c_str(), total_queries, consecutive_stuck_);
     return false;
   }
+
+  // At least some queries succeeded — reset stuck counter
+  consecutive_stuck_ = 0;
 
   // Signal main loop
   data_fresh_ = true;
