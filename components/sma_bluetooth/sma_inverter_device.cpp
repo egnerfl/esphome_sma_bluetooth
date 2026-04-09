@@ -53,28 +53,6 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   pkt_id_ = 1;
   hub->bt_flush_rx();
 
-  // Clear data_received bitmask — only data actually read this cycle gets published
-  inv_data_.data_received = 0;
-
-  // Zero all measurement fields to prevent stale values from persisting across
-  // failed queries. Identity fields (btAddress, SUSyID, Serial, NetID) and
-  // strings (DeviceName, SWVersion) are preserved — they don't change between polls.
-  inv_data_.Pmax = 0;   inv_data_.TotalPac = 0;
-  inv_data_.Pac = 0;    inv_data_.Pac1 = 0;   inv_data_.Pac2 = 0;   inv_data_.Pac3 = 0;
-  inv_data_.Uac1 = 0;   inv_data_.Uac2 = 0;   inv_data_.Uac3 = 0;
-  inv_data_.Iac1 = 0;   inv_data_.Iac2 = 0;   inv_data_.Iac3 = 0;
-  inv_data_.Pdc1 = 0;   inv_data_.Pdc2 = 0;
-  inv_data_.Udc1 = 0;   inv_data_.Udc2 = 0;
-  inv_data_.Idc1 = 0;   inv_data_.Idc2 = 0;
-  inv_data_.GridFreq = 0;  inv_data_.Eta = 0;    inv_data_.InvTemp = 0;
-  inv_data_.EToday = 0; inv_data_.ETotal = 0;  inv_data_.LastTime = 0;
-  inv_data_.OperationTime = 0;  inv_data_.FeedInTime = 0;
-  inv_data_.DevStatus = 0;      inv_data_.GridRelay = 0;
-  inv_data_.MeteringGridMsTotWOut = 0;  inv_data_.MeteringGridMsTotWIn = 0;
-  inv_data_.WakeupTime = 0;
-
-  disp_data_ = DisplayData{};
-
   // Initialize SMA connection (retry once on failure — some inverters
   // drop the BT connection during the init handshake intermittently)
   E_RC rc = initialize_connection(hub);
@@ -132,39 +110,6 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
     return false;
   }
 
-  // Recovery: after 3+ consecutive stuck sessions (all queries fail despite
-  // successful logon), do a logoff-only cycle to clear the inverter's BT state,
-  // then reconnect fresh. The inverter's BT stack sometimes accepts logins but
-  // refuses data queries until the session is explicitly torn down and rebuilt.
-  if (consecutive_stuck_ >= 3) {
-    ESP_LOGI(TAG, "[%s] Stuck recovery: logoff-only cycle (%u stuck sessions)",
-             mac_string_.c_str(), consecutive_stuck_);
-    logoff(hub);
-    hub->spp_disconnect();
-    // Longer delay to let the inverter fully reset its BT state
-    vTaskDelay(pdMS_TO_TICKS(5000));
-
-    // Reconnect fresh
-    if (!hub->spp_connect(bt_address_)) return false;
-    pkt_id_ = 1;
-    hub->bt_flush_rx();
-    rc = initialize_connection(hub);
-    if (rc != E_OK) {
-      hub->spp_disconnect();
-      return false;
-    }
-    // Re-logon
-    logged_on = false;
-    if (password_set_) {
-      rc = logon(hub, password_, USERGROUP);
-      if (rc == E_OK) logged_on = true;
-    }
-    if (!logged_on) {
-      hub->spp_disconnect();
-      return false;
-    }
-  }
-
   // Query once-types (TypeLabel, SoftwareVersion)
   for (int i = 0; i < NUM_ONCE_TYPES; i++) {
     get_inverter_data(hub, ONCE_QUERY_TYPES[i]);
@@ -220,19 +165,15 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   logoff(hub);
   hub->spp_disconnect();
 
-  // If ALL queries failed, the session was stuck — report failure so the
-  // hub's backoff/retry logic kicks in rather than publishing stale data.
+  // If ALL queries failed, report failure so the hub's backoff logic kicks in
+  // rather than publishing stale data.
   int total_queries = NUM_FAST_TYPES + NUM_SLOW_TYPES;
   int total_failures = fast_failures + slow_failures;
   if (total_failures >= total_queries) {
-    consecutive_stuck_++;
-    ESP_LOGW(TAG, "[%s] All %d queries failed — session stuck (stuck count: %u)",
-             mac_string_.c_str(), total_queries, consecutive_stuck_);
+    ESP_LOGW(TAG, "[%s] All %d queries failed — session stuck",
+             mac_string_.c_str(), total_queries);
     return false;
   }
-
-  // At least some queries succeeded — reset stuck counter
-  consecutive_stuck_ = 0;
 
   // Signal main loop
   data_fresh_ = true;
@@ -868,50 +809,33 @@ bool SmaInverterDevice::is_valid_sender(const uint8_t exp[6], const uint8_t is[6
 void SmaInverterDevice::handle_missing_values() {
   auto &d = disp_data_;
   auto &r = inv_data_;
-  uint32_t dr = r.data_received;
 
-  // DC power: fallback from V × A only when SpotDCPower was NOT received
-  // but DC voltage/current data WAS received.
-  bool has_dc_power = (dr & InverterData::DATA_DC_POWER);
-  bool has_dc_vi    = (dr & InverterData::DATA_DC_VOLTAGE);
-  if (!has_dc_power && has_dc_vi) {
-    if (d.Udc1 != 0.0f || d.Idc1 != 0.0f) {
-      d.Pdc1 = d.Udc1 * d.Idc1 / 1000.0f;  // kW
-      r.Pdc1 = (int32_t)(d.Udc1 * d.Idc1);  // W
-      r.data_received |= InverterData::DATA_DC_POWER;
-      d.needsMissingValues = true;
-    }
-    if (d.Udc2 != 0.0f || d.Idc2 != 0.0f) {
-      d.Pdc2 = d.Udc2 * d.Idc2 / 1000.0f;
-      r.Pdc2 = (int32_t)(d.Udc2 * d.Idc2);
-      r.data_received |= InverterData::DATA_DC_POWER;
-      d.needsMissingValues = true;
-    }
+  // DC power: fallback from V × A when SpotDCPower query fails
+  if (d.Pdc1 == 0.0f && d.Udc1 != 0.0f && d.Idc1 != 0.0f) {
+    d.Pdc1 = d.Udc1 * d.Idc1 / 1000.0f;  // kW
+    r.Pdc1 = (int32_t)(d.Udc1 * d.Idc1);  // W
+    d.needsMissingValues = true;
   }
-
-  // AC power: fallback from V × A only when SpotACPower was NOT received
-  // but AC voltage data WAS received (current is stored under DATA_AC_VOLTAGE).
-  bool has_ac_power = (dr & InverterData::DATA_AC_POWER);
-  bool has_ac_vi    = (dr & InverterData::DATA_AC_VOLTAGE);
-  if (!has_ac_power && has_ac_vi) {
-    if (d.Uac1 != 0.0f || d.Iac1 != 0.0f) {
-      d.Pac1 = d.Uac1 * d.Iac1 / 1000.0f;
-      r.Pac1 = (int32_t)(d.Uac1 * d.Iac1);
-      r.data_received |= InverterData::DATA_AC_POWER;
-      d.needsMissingValues = true;
-    }
-    if (d.Uac2 != 0.0f || d.Iac2 != 0.0f) {
-      d.Pac2 = d.Uac2 * d.Iac2 / 1000.0f;
-      r.Pac2 = (int32_t)(d.Uac2 * d.Iac2);
-      r.data_received |= InverterData::DATA_AC_POWER;
-      d.needsMissingValues = true;
-    }
-    if (d.Uac3 != 0.0f || d.Iac3 != 0.0f) {
-      d.Pac3 = d.Uac3 * d.Iac3 / 1000.0f;
-      r.Pac3 = (int32_t)(d.Uac3 * d.Iac3);
-      r.data_received |= InverterData::DATA_AC_POWER;
-      d.needsMissingValues = true;
-    }
+  if (d.Pdc2 == 0.0f && d.Udc2 != 0.0f && d.Idc2 != 0.0f) {
+    d.Pdc2 = d.Udc2 * d.Idc2 / 1000.0f;
+    r.Pdc2 = (int32_t)(d.Udc2 * d.Idc2);
+    d.needsMissingValues = true;
+  }
+  // AC power: fallback from V × A when SpotACPower query fails
+  if (d.Pac1 == 0.0f && d.Uac1 != 0.0f && d.Iac1 != 0.0f) {
+    d.Pac1 = d.Uac1 * d.Iac1 / 1000.0f;
+    r.Pac1 = (int32_t)(d.Uac1 * d.Iac1);
+    d.needsMissingValues = true;
+  }
+  if (d.Pac2 == 0.0f && d.Uac2 != 0.0f && d.Iac2 != 0.0f) {
+    d.Pac2 = d.Uac2 * d.Iac2 / 1000.0f;
+    r.Pac2 = (int32_t)(d.Uac2 * d.Iac2);
+    d.needsMissingValues = true;
+  }
+  if (d.Pac3 == 0.0f && d.Uac3 != 0.0f && d.Iac3 != 0.0f) {
+    d.Pac3 = d.Uac3 * d.Iac3 / 1000.0f;
+    r.Pac3 = (int32_t)(d.Uac3 * d.Iac3);
+    d.needsMissingValues = true;
   }
 }
 
@@ -920,7 +844,7 @@ void SmaInverterDevice::handle_missing_values() {
 // ============================================================
 
 void SmaInverterDevice::publish_sensor(sensor::Sensor *s, float v) {
-  if (s != nullptr) s->publish_state(v);
+  if (s != nullptr && v >= 0.0f) s->publish_state(v);
 }
 
 void SmaInverterDevice::publish_sensor(sensor::Sensor *s, uint64_t v) {
@@ -948,15 +872,8 @@ bool SmaInverterDevice::publish_sensors() {
     sensors_created = true;
   }
 
-  // Guard: only publish data categories that were actually read from the inverter
-  // this cycle. inv_data_ is zero-initialized; publishing zeros for cumulative
-  // sensors (ETotal, OperationTime) destroys HA graphs. The data_received
-  // bitmask is set in the record-parsing switch and cleared at start of poll().
-  uint32_t dr = inv_data_.data_received;
-
-  // Energy sensors — only publish when energy data was actually received
-  if (dr & InverterData::DATA_ENERGY) {
-    // Compute EToday from ETotal delta if inverter doesn't report MeteringDyWhOut
+  // Compute EToday from ETotal delta if inverter doesn't report MeteringDyWhOut
+  if (inv_data_.ETotal > 0) {
     if (inv_data_.EToday > 0) {
       // Inverter reports daily energy natively
       publish_sensor(today_production_, disp_data_.EToday);
@@ -979,68 +896,53 @@ bool SmaInverterDevice::publish_sensors() {
         publish_sensor(today_production_, e_today_kwh);
       }
     }
-    publish_sensor(total_energy_production_, disp_data_.ETotal);
   }
+  publish_sensor(total_energy_production_, disp_data_.ETotal);
+  publish_sensor(grid_frequency_sensor_, disp_data_.GridFreq);
 
-  // AC sensors — only publish when AC data was actually received
-  if (dr & (InverterData::DATA_AC_POWER | InverterData::DATA_AC_VOLTAGE)) {
-    if (dr & InverterData::DATA_FREQUENCY) {
-      publish_sensor(grid_frequency_sensor_, disp_data_.GridFreq);
+  publish_sensor(pvs_[0].voltage, disp_data_.Udc1);
+  publish_sensor(pvs_[0].current, disp_data_.Idc1);
+  publish_sensor(pvs_[0].active_power, (float)inv_data_.Pdc1);  // W (not kW)
+
+  publish_sensor(pvs_[1].voltage, disp_data_.Udc2);
+  publish_sensor(pvs_[1].current, disp_data_.Idc2);
+  publish_sensor(pvs_[1].active_power, (float)inv_data_.Pdc2);  // W (not kW)
+
+  publish_sensor(phases_[0].voltage, disp_data_.Uac1);
+  publish_sensor(phases_[0].current, disp_data_.Iac1);
+  publish_sensor(phases_[0].active_power, (float)inv_data_.Pac1);  // W (not kW)
+
+  publish_sensor(phases_[1].voltage, disp_data_.Uac2);
+  publish_sensor(phases_[1].current, disp_data_.Iac2);
+  publish_sensor(phases_[1].active_power, (float)inv_data_.Pac2);  // W (not kW)
+
+  publish_sensor(phases_[2].voltage, disp_data_.Uac3);
+  publish_sensor(phases_[2].current, disp_data_.Iac3);
+  publish_sensor(phases_[2].active_power, (float)inv_data_.Pac3);  // W (not kW)
+
+  // Total AC power: use TotalPac if available, otherwise sum per-phase
+  {
+    float total_w = (float)inv_data_.TotalPac;
+    if (total_w == 0.0f) {
+      total_w = (float)(inv_data_.Pac1 + inv_data_.Pac2 + inv_data_.Pac3);
     }
-
-    publish_sensor(phases_[0].voltage, disp_data_.Uac1);
-    publish_sensor(phases_[0].current, disp_data_.Iac1);
-    publish_sensor(phases_[0].active_power, (float)inv_data_.Pac1);  // W (not kW)
-
-    publish_sensor(phases_[1].voltage, disp_data_.Uac2);
-    publish_sensor(phases_[1].current, disp_data_.Iac2);
-    publish_sensor(phases_[1].active_power, (float)inv_data_.Pac2);  // W (not kW)
-
-    publish_sensor(phases_[2].voltage, disp_data_.Uac3);
-    publish_sensor(phases_[2].current, disp_data_.Iac3);
-    publish_sensor(phases_[2].active_power, (float)inv_data_.Pac3);  // W (not kW)
-
-    // Total AC power: use TotalPac if available, otherwise sum per-phase
-    if (dr & (InverterData::DATA_AC_TOTAL | InverterData::DATA_AC_POWER)) {
-      float total_w = (float)inv_data_.TotalPac;
-      if (total_w == 0.0f) {
-        total_w = (float)(inv_data_.Pac1 + inv_data_.Pac2 + inv_data_.Pac3);
-      }
-      publish_sensor(total_ac_power_, total_w);
-    }
+    publish_sensor(total_ac_power_, total_w);
   }
 
-  // DC sensors — only publish when DC data was actually received
-  if (dr & (InverterData::DATA_DC_POWER | InverterData::DATA_DC_VOLTAGE)) {
-    publish_sensor(pvs_[0].voltage, disp_data_.Udc1);
-    publish_sensor(pvs_[0].current, disp_data_.Idc1);
-    publish_sensor(pvs_[0].active_power, (float)inv_data_.Pdc1);  // W (not kW)
-
-    publish_sensor(pvs_[1].voltage, disp_data_.Udc2);
-    publish_sensor(pvs_[1].current, disp_data_.Idc2);
-    publish_sensor(pvs_[1].active_power, (float)inv_data_.Pdc2);  // W (not kW)
-  }
-
-  // Temperature — only publish when temperature data was received
-  if (dr & InverterData::DATA_TEMPERATURE) {
+  // Only publish temperature if inverter supports it (non-zero)
+  if (disp_data_.InvTemp > 0.0f) {
     publish_sensor(inverter_module_temp_, disp_data_.InvTemp);
   }
   publish_sensor(bt_signal_strength_, disp_data_.BTSigStrength);
 
-  // Operation time — only publish when optime data was received
-  if (dr & InverterData::DATA_OPTIME) {
-    publish_sensor(today_generation_time_, (float)inv_data_.OperationTime / 3600.0f);
-    publish_sensor(total_generation_time_, (float)inv_data_.FeedInTime / 3600.0f);
-  }
-  if (inv_data_.WakeupTime > 0) {
-    publish_sensor(wakeup_time_, (uint64_t)inv_data_.WakeupTime);
-  }
+  // Publish operation/feed-in time (0 is valid — inverter just started)
+  publish_sensor(today_generation_time_, (float)inv_data_.OperationTime / 3600.0f);
+  publish_sensor(total_generation_time_, (float)inv_data_.FeedInTime / 3600.0f);
+  publish_sensor(wakeup_time_, (uint64_t)inv_data_.WakeupTime);
 
 #ifdef USE_TEXT_SENSOR
-  if (dr & InverterData::DATA_STATUS) {
-    publish_sensor(status_text_sensor_,
-                   lookup_status_code(inv_data_.DevStatus));
-  }
+  publish_sensor(status_text_sensor_,
+                 lookup_status_code(inv_data_.DevStatus));
   publish_sensor(serial_number_, inv_data_.DeviceName);
   publish_sensor(software_version_, inv_data_.SWVersion);
   publish_sensor(device_type_,
@@ -1051,8 +953,9 @@ bool SmaInverterDevice::publish_sensors() {
   publish_sensor(mac_address_sensor_, mac_string_);
 #endif
 #ifdef USE_BINARY_SENSOR
-  // Only publish grid relay if status data was actually received
-  if ((dr & InverterData::DATA_STATUS) && inv_data_.GridRelay != 0) {
+  // Only publish grid connection if relay status was actually returned
+  // (code 51 = Closed/connected, 311 = Open/disconnected, 0 = query not supported)
+  if (inv_data_.GridRelay != 0) {
     publish_sensor(grid_relay_, inv_data_.GridRelay == 51);
   }
 #endif
