@@ -342,14 +342,15 @@ E_RC SmaInverterDevice::get_inverter_data(SmaBluetoothHub *hub, getInverterDataT
       return E_BADARG;
   }
 
+  E_RC last_rc = E_NODATA;
   for (uint8_t retries = 0; retries < 2; retries++) {
-    E_RC rc = get_inverter_data_cfl(hub, command, first, last);
-    if (rc == E_OK) return rc;
+    last_rc = get_inverter_data_cfl(hub, command, first, last);
+    if (last_rc == E_OK) return last_rc;
     if (retries == 0) {
-      ESP_LOGD(TAG, "[%s] Query retry", mac_string_.c_str());
+      ESP_LOGD(TAG, "[%s] Query retry (inner rc=%d)", mac_string_.c_str(), last_rc);
     }
   }
-  return E_NODATA;
+  return last_rc;
 }
 
 // ============================================================
@@ -386,7 +387,10 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
     uint8_t pkt_count = 0;
     do {
       inv_data_.status = get_packet(hub, inv_data_.btAddress, 0x0001);
-      if (inv_data_.status != E_OK) return inv_data_.status;
+      if (inv_data_.status != E_OK) {
+        ESP_LOGD(TAG, "[%s] get_packet failed: %d", mac_string_.c_str(), inv_data_.status);
+        return inv_data_.status;
+      }
 
       if (!validate_checksum()) {
         inv_data_.status = E_CHKSUM;
@@ -394,6 +398,9 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
       }
 
       if ((inv_data_.status = (E_RC)get_u16(pkt_buf_ + 23)) != E_OK) {
+        ESP_LOGD(TAG, "[%s] Response status error: %d (0x%04X), pkt_id=0x%04X",
+                 mac_string_.c_str(), inv_data_.status, get_u16(pkt_buf_ + 23),
+                 get_u16(pkt_buf_ + 27) & 0x7FFF);
         return inv_data_.status;
       }
 
