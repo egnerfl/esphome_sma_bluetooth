@@ -76,15 +76,26 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
   if (password_set_) {
     // Use specific/cached password
     rc = logon(hub, password_, USERGROUP);
-    if (rc == E_OK) logged_on = true;
+    if (rc == E_OK) {
+      logged_on = true;
+    } else {
+      ESP_LOGW(TAG, "[%s] Cached password rejected, clearing cache", mac_string_.c_str());
+      password_set_ = false;
+      password_[0] = '\0';
+      // Reconnect needed after failed logon attempt
+      hub->spp_disconnect();
+      vTaskDelay(pdMS_TO_TICKS(3000));
+      if (!hub->spp_connect(bt_address_)) return false;
+      pkt_id_ = 1;
+      hub->bt_flush_rx();
+      rc = initialize_connection(hub);
+      if (rc != E_OK) return false;
+    }
   }
 
   if (!logged_on) {
     // Try default passwords from hub config
     for (const auto &pw : hub->get_passwords()) {
-      // Skip if same as already-tried cached password
-      if (password_set_ && pw == password_) continue;
-
       rc = logon(hub, pw.c_str(), USERGROUP);
       if (rc == E_OK) {
         set_working_password(pw);
@@ -278,6 +289,15 @@ E_RC SmaInverterDevice::logon(SmaBluetoothHub *hub, const char *password, uint8_
   if (pkt_id_ == rcv_pkt_id && get_u32(pkt_buf_ + 41) == (uint32_t)now) {
     inv_data_.SUSyID = get_u16(pkt_buf_ + 15);
     inv_data_.Serial = get_u32(pkt_buf_ + 17);
+
+    // Check status word — 0x0015 means "not authenticated" (wrong password / access level)
+    uint16_t status = get_u16(pkt_buf_ + 23);
+    if (status != 0) {
+      ESP_LOGW(TAG, "[%s] Logon rejected: status=0x%04X (SUSyID=0x%02X Serial=%lu)",
+               mac_string_.c_str(), status, inv_data_.SUSyID, (unsigned long)inv_data_.Serial);
+      return E_INVPASSW;
+    }
+
     ESP_LOGD(TAG, "[%s] Logon OK (SUSyID=0x%02X Serial=%lu)",
              mac_string_.c_str(), inv_data_.SUSyID, (unsigned long)inv_data_.Serial);
     return E_OK;
