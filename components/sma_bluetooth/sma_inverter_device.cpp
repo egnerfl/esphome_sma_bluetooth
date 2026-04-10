@@ -989,6 +989,21 @@ bool SmaInverterDevice::publish_sensors() {
   return sensors_created;
 }
 
+void SmaInverterDevice::publish_unavailable() {
+  // Zero out power sensors when inverter is unreachable.
+  // Energy sensors (kWh) are intentionally left unchanged.
+  for (int i = 0; i < 3; i++) {
+    if (phases_[i].active_power != nullptr)
+      phases_[i].active_power->publish_state(0.0f);
+  }
+  for (int i = 0; i < 2; i++) {
+    if (pvs_[i].active_power != nullptr)
+      pvs_[i].active_power->publish_state(0.0f);
+  }
+  if (total_ac_power_ != nullptr)
+    total_ac_power_->publish_state(0.0f);
+}
+
 // ============================================================
 //  Auto-sensor creation for autodiscovery mode
 // ============================================================

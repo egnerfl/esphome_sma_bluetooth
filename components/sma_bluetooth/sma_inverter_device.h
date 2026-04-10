@@ -109,6 +109,9 @@ class SmaInverterDevice {
   // Returns true if new auto-sensors were just created (caller should reboot)
   bool publish_sensors();
 
+  // Publish 0W to power sensors when inverter is unreachable
+  void publish_unavailable();
+
   // Create auto-sensors for autodiscovery mode
   void create_auto_sensors(const std::string &prefix);
 
