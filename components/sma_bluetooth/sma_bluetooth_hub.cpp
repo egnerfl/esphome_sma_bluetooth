@@ -327,47 +327,62 @@ void SmaBluetoothHub::bt_flush_rx() {
 // ============================================================
 
 bool SmaBluetoothHub::spp_connect(const uint8_t mac[6]) {
-  xEventGroupClearBits(bt_event_group_, BT_EVT_DISC_DONE | BT_EVT_CONNECTED | BT_EVT_DISCONNECTED);
-  bt_flush_rx();
+  // Retry the entire SPP connect sequence (discovery + connect) once on failure.
+  // Some inverters need a second attempt after the BT link warms up.
+  for (int attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      ESP_LOGD(TAG, "SPP connect retry (attempt %d)", attempt + 1);
+      spp_disconnect();
+      vTaskDelay(pdMS_TO_TICKS(3000));
+    }
 
-  // Phase 1: SPP service discovery
-  ESP_LOGD(TAG, "SPP discovery for %02X:%02X:%02X:%02X:%02X:%02X",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    xEventGroupClearBits(bt_event_group_, BT_EVT_DISC_DONE | BT_EVT_CONNECTED | BT_EVT_DISCONNECTED);
+    bt_flush_rx();
 
-  esp_err_t err = esp_spp_start_discovery((uint8_t *)mac);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "spp_start_discovery: %s", esp_err_to_name(err));
-    return false;
+    // Phase 1: SPP service discovery
+    ESP_LOGD(TAG, "SPP discovery for %02X:%02X:%02X:%02X:%02X:%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    esp_err_t err = esp_spp_start_discovery((uint8_t *)mac);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "spp_start_discovery: %s", esp_err_to_name(err));
+      continue;
+    }
+
+    EventBits_t bits = xEventGroupWaitBits(bt_event_group_, BT_EVT_DISC_DONE,
+                                            pdFALSE, pdFALSE, pdMS_TO_TICKS(20000));
+    if (!(bits & BT_EVT_DISC_DONE)) {
+      ESP_LOGE(TAG, "SPP discovery timeout");
+      continue;
+    }
+
+    // Phase 2: SPP connect
+    ESP_LOGD(TAG, "SPP connecting, SCN=%d", discovered_scn_);
+    xEventGroupClearBits(bt_event_group_, BT_EVT_CONNECTED | BT_EVT_DISCONNECTED);
+
+    err = esp_spp_connect(ESP_SPP_SEC_AUTHENTICATE, ESP_SPP_ROLE_MASTER,
+                           discovered_scn_, (uint8_t *)mac);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "spp_connect: %s", esp_err_to_name(err));
+      continue;
+    }
+
+    bits = xEventGroupWaitBits(bt_event_group_, BT_EVT_CONNECTED | BT_EVT_DISCONNECTED,
+                                pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
+    if (!(bits & BT_EVT_CONNECTED)) {
+      ESP_LOGE(TAG, "SPP connect timeout");
+      continue;
+    }
+
+    ESP_LOGD(TAG, "SPP connected");
+    bt_flush_rx();
+
+    // Brief settling delay — let RFCOMM channel stabilize before SMA protocol
+    vTaskDelay(pdMS_TO_TICKS(500));
+    return true;
   }
 
-  EventBits_t bits = xEventGroupWaitBits(bt_event_group_, BT_EVT_DISC_DONE,
-                                          pdFALSE, pdFALSE, pdMS_TO_TICKS(10000));
-  if (!(bits & BT_EVT_DISC_DONE)) {
-    ESP_LOGE(TAG, "SPP discovery timeout");
-    return false;
-  }
-
-  // Phase 2: SPP connect
-  ESP_LOGD(TAG, "SPP connecting, SCN=%d", discovered_scn_);
-  xEventGroupClearBits(bt_event_group_, BT_EVT_CONNECTED | BT_EVT_DISCONNECTED);
-
-  err = esp_spp_connect(ESP_SPP_SEC_AUTHENTICATE, ESP_SPP_ROLE_MASTER,
-                         discovered_scn_, (uint8_t *)mac);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "spp_connect: %s", esp_err_to_name(err));
-    return false;
-  }
-
-  bits = xEventGroupWaitBits(bt_event_group_, BT_EVT_CONNECTED | BT_EVT_DISCONNECTED,
-                              pdFALSE, pdFALSE, pdMS_TO_TICKS(15000));
-  if (!(bits & BT_EVT_CONNECTED)) {
-    ESP_LOGE(TAG, "SPP connect timeout");
-    return false;
-  }
-
-  ESP_LOGD(TAG, "SPP connected");
-  bt_flush_rx();
-  return true;
+  return false;
 }
 
 void SmaBluetoothHub::spp_disconnect() {
@@ -399,7 +414,7 @@ void SmaBluetoothHub::run_discovery_scan() {
   uint32_t start = xTaskGetTickCount();
   while (!discovery_complete_ && !stop_task_) {
     vTaskDelay(pdMS_TO_TICKS(500));
-    if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(15000)) {
+    if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(20000)) {
       ESP_LOGD(TAG, "GAP discovery timeout, cancelling");
       esp_bt_gap_cancel_discovery();
       break;

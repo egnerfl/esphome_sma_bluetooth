@@ -626,7 +626,7 @@ E_RC SmaInverterDevice::get_packet(SmaBluetoothHub *hub, const uint8_t exp_addr[
     // Read L1 header (18 bytes)
     uint8_t cnt = 0;
     for (cnt = 0; cnt < 18; cnt++) {
-      rd_buf_[cnt] = hub->bt_get_byte(5000);
+      rd_buf_[cnt] = hub->bt_get_byte(10000);
       if (hub->bt_read_timeout()) break;
     }
 
@@ -647,7 +647,7 @@ E_RC SmaInverterDevice::get_packet(SmaBluetoothHub *hub, const uint8_t exp_addr[
 
       // Read remaining bytes
       for (cnt = 18; cnt < hdr->pkLength; cnt++) {
-        rd_buf_[cnt] = hub->bt_get_byte(5000);
+        rd_buf_[cnt] = hub->bt_get_byte(10000);
         if (hub->bt_read_timeout()) break;
       }
 
