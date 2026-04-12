@@ -332,7 +332,8 @@ bool SmaBluetoothHub::spp_connect(const uint8_t mac[6]) {
   for (int attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) {
       ESP_LOGD(TAG, "SPP connect retry (attempt %d)", attempt + 1);
-      spp_disconnect();
+      // Tear down any partial connection (ACL link may exist even without SPP handle)
+      spp_disconnect_full(mac);
       vTaskDelay(pdMS_TO_TICKS(3000));
     }
 
@@ -393,6 +394,21 @@ void SmaBluetoothHub::spp_disconnect() {
                          pdFALSE, pdFALSE, pdMS_TO_TICKS(3000));
   }
   bt_connected_ = false;
+}
+
+void SmaBluetoothHub::spp_disconnect_full(const uint8_t mac[6]) {
+  // First try graceful SPP disconnect
+  spp_disconnect();
+
+  // Also tear down the underlying ACL link — a failed SPP connect can leave
+  // a stale HCI connection (spp_handle_==0 but ACL link still up), which
+  // causes HCI command timeouts on subsequent discovery attempts.
+  esp_err_t err = esp_bt_gap_remove_bond_device((uint8_t *)mac);
+  if (err == ESP_OK) {
+    ESP_LOGD(TAG, "Removed bond for clean reconnect");
+  }
+  // Small delay for the HCI disconnect to propagate
+  vTaskDelay(pdMS_TO_TICKS(500));
 }
 
 // ============================================================
@@ -613,6 +629,16 @@ void SmaBluetoothHub::bt_task_loop() {
         } else {
           ESP_LOGW(TTAG, "Poll failed for %s (errors: %u)",
                    device->mac_string().c_str(), device->consecutive_errors());
+        }
+
+        // If BT stack appears stuck (many consecutive failures), reboot.
+        // HCI command timeouts and stale ACL links can put the stack in an
+        // unrecoverable state that only a full reboot can fix.
+        if (device->consecutive_errors() >= 10) {
+          ESP_LOGE(TTAG, "BT stack appears stuck after %u failures — rebooting",
+                   device->consecutive_errors());
+          vTaskDelay(pdMS_TO_TICKS(1000));
+          esp_restart();
         }
       }
 

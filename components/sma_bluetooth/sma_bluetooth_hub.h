@@ -71,6 +71,7 @@ class SmaBluetoothHub : public Component {
   // SPP connection management — called from BT task
   bool spp_connect(const uint8_t mac[6]);
   void spp_disconnect();
+  void spp_disconnect_full(const uint8_t mac[6]);
   bool is_bt_connected() const { return bt_connected_; }
 
   // Discovery
