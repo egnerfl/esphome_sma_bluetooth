@@ -431,7 +431,8 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
       if (pkt_id_ != rcv_pkt_id) {
         ESP_LOGD(TAG, "PktID mismatch: exp=0x%04X got=0x%04X", pkt_id_, rcv_pkt_id);
         valid_pkt_id = false;
-        pkt_count = 0;
+        // Don't zero pkt_count — keep draining packets from the stream
+        // until we see the expected ID or the inner loop naturally exits.
         continue;
       }
 
@@ -635,6 +636,9 @@ E_RC SmaInverterDevice::get_packet(SmaBluetoothHub *hub, const uint8_t exp_addr[
     // Validate L1 checksum
     if (!((rd_buf_[0] ^ rd_buf_[1] ^ rd_buf_[2]) == rd_buf_[3])) {
       ESP_LOGD(TAG, "Wrong L1 CRC");
+      hub->bt_flush_rx();
+      rc = E_RETRY;
+      continue;
     }
 
     if (hdr->pkLength > sizeof(L1Hdr)) {
@@ -680,7 +684,6 @@ E_RC SmaInverterDevice::get_packet(SmaBluetoothHub *hub, const uint8_t exp_addr[
           }
           if (index >= MAX_PCKT_BUF_SIZE) {
             ESP_LOGE(TAG, "pkt_buf overflow");
-            index = 0;
             rc = E_RETRY;
             break;
           }

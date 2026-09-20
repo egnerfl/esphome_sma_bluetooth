@@ -392,6 +392,9 @@ void SmaBluetoothHub::spp_disconnect() {
     // Wait briefly for disconnect event
     xEventGroupWaitBits(bt_event_group_, BT_EVT_DISCONNECTED,
                          pdFALSE, pdFALSE, pdMS_TO_TICKS(3000));
+    // Always clear the handle — if the callback didn't arrive in time the
+    // handle is stale and must not be used for the next connection attempt.
+    spp_handle_ = 0;
   }
   bt_connected_ = false;
 }
