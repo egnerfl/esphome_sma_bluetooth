@@ -81,13 +81,17 @@ async def to_code(config):
             cg.add(var.add_inverter_config(inv_cfg))
 
     # Add BT Classic sdkconfig options for ESP-IDF
-    from esphome.components.esp32 import add_idf_sdkconfig_option
+    from esphome.components.esp32 import add_idf_sdkconfig_option, request_bluetooth
     add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLUEDROID_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BT_CLASSIC_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BT_SPP_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLE_ENABLED", False)
+    # Remove 'bt' from ESPHome's default IDF component exclusion list so its
+    # headers (esp_bt.h etc.) are on the include path during compilation.
+    # Required since ESPHome started excluding 'bt' by default to save build time.
+    request_bluetooth()
 
     # Enable sub-device support so each inverter appears as a separate
     # device in Home Assistant (requires ESPHome >= 2025.7.0).
