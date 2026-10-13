@@ -59,6 +59,11 @@ class SmaBluetoothHub : public Component {
     inverter_configs_.push_back(entry);
   }
 
+  // External pause gate. While paused, the BT task opens no connections
+  // (useful during OTA uploads or when inverters are unpowered).
+  void set_paused(bool p) { paused_ = p; }
+  bool is_paused() const { return paused_; }
+
   // Device registration
   void register_device(SmaInverterDevice *device);
 
@@ -101,6 +106,7 @@ class SmaBluetoothHub : public Component {
   const InverterConfig *find_inverter_config(const uint8_t mac[6]) const;
   SmaInverterDevice *find_device_by_mac(const uint8_t mac[6]) const;
   SmaInverterDevice *create_discovered_device(const uint8_t mac[6], const std::string &bt_name);
+  static bool same_mac_(const std::string &a, const std::string &b);
 
   // Night mode
   bool is_nighttime() const;
@@ -130,6 +136,7 @@ class SmaBluetoothHub : public Component {
   volatile bool bt_connected_{false};
   volatile bool task_error_{false};
   volatile bool stop_task_{false};
+  volatile bool paused_{false};
   bool read_timeout_{false};
   bool bt_initialized_{false};
 

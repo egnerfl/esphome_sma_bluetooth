@@ -114,6 +114,8 @@ class SmaInverterDevice {
 
   // Create auto-sensors for autodiscovery mode
   void create_auto_sensors(const std::string &prefix);
+  // Mark auto-sensors as created (e.g. for YAML-configured inverters that already have explicit sensors)
+  void skip_auto_sensors() { auto_sensors_created_ = true; }
 
   // Handle missing values (derive power from V*I)
   void handle_missing_values();
@@ -212,7 +214,8 @@ class SmaInverterDevice {
 
   // Per-inverter identity
   uint8_t bt_address_[6]{};
-  uint8_t esp_bt_address_[6]{};  // learned during init handshake
+  uint8_t esp_bt_address_[6]{};  // Hardware BT MAC, LSB first
+  void load_local_bt_address_();
   char    password_[13]{};       // 12 chars + null
   bool    password_set_{false};
   std::string mac_string_;
