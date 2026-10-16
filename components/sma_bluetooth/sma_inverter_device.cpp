@@ -1,5 +1,6 @@
 /* MIT License — based on work by Lupo135, darrylb123, keerekeerweere */
 
+#include "esp_mac.h"
 #include "sma_inverter_device.h"
 #include "sma_bluetooth_hub.h"
 #include "esphome/core/defines.h"
@@ -32,11 +33,15 @@ void SmaInverterDevice::set_mac_address(const std::string &mac) {
 void SmaInverterDevice::set_password(const std::string &pw) {
   memset(password_, 0, sizeof(password_));
   strncpy(password_, pw.c_str(), 12);
-  password_set_ = true;
+  password_set_ = !pw.empty();
+  configured_password_ = true;
 }
 
 void SmaInverterDevice::set_working_password(const std::string &pw) {
-  set_password(pw);
+  memset(password_, 0, sizeof(password_));
+  strncpy(password_, pw.c_str(), 12);
+  password_set_ = !pw.empty();
+  configured_password_ = false;
   ESP_LOGI(TAG, "[%s] Working password cached", mac_string_.c_str());
 }
 
@@ -78,6 +83,12 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
     rc = logon(hub, password_, USERGROUP);
     if (rc == E_OK) {
       logged_on = true;
+    } else if (configured_password_) {
+      // Do not clear configured password on transient logon failure,
+      // and do not fall back to default passwords ("0000"/"1111") which locks out the inverter.
+      ESP_LOGW(TAG, "[%s] Configured password logon failed (rc=%d) - preserving password", mac_string_.c_str(), rc);
+      hub->spp_disconnect();
+      return false;
     } else {
       ESP_LOGW(TAG, "[%s] Cached password rejected, clearing cache", mac_string_.c_str());
       password_set_ = false;
@@ -195,8 +206,18 @@ bool SmaInverterDevice::poll(SmaBluetoothHub *hub) {
 //  SMA protocol: initialize connection
 // ============================================================
 
+// Sender address for write_packet_header(), straight from the chip (BT MAC),
+// stored LSB first as expected on the wire.
+void SmaInverterDevice::load_local_bt_address_() {
+  uint8_t mac[6];
+  if (esp_read_mac(mac, ESP_MAC_BT) == ESP_OK) {
+    for (int i = 0; i < 6; i++) esp_bt_address_[i] = mac[5 - i];
+  }
+}
+
 E_RC SmaInverterDevice::initialize_connection(SmaBluetoothHub *hub) {
   ESP_LOGD(TAG, "[%s] Initializing SMA connection", mac_string_.c_str());
+  load_local_bt_address_();
 
   // Step 1: Receive packet → extract NetID
   if (get_packet(hub, inv_data_.btAddress, 2) != E_OK) {
@@ -226,7 +247,15 @@ E_RC SmaInverterDevice::initialize_connection(SmaBluetoothHub *hub) {
     ESP_LOGD(TAG, "[%s] Init step 3 failed (no NetID response)", mac_string_.c_str());
     return E_INIT;
   }
-  memcpy(esp_bt_address_, pkt_buf_ + 26, 6);
+  // Verify that the echoed address matches our hardware address.
+  // Copying it blindly can poison every later session if a foreign packet
+  // or misaligned read occurs.
+  if (memcmp(esp_bt_address_, pkt_buf_ + 26, 6) != 0) {
+    ESP_LOGW(TAG, "[%s] NetID response echoes %02X:%02X:%02X:%02X:%02X:%02X, not our "
+             "address -- reply for another BT master or misaligned read, retrying", mac_string_.c_str(),
+             pkt_buf_[31], pkt_buf_[30], pkt_buf_[29], pkt_buf_[28], pkt_buf_[27], pkt_buf_[26]);
+    return E_INIT;
+  }
   ESP_LOGD(TAG, "[%s] ESP BT addr: %02X:%02X:%02X:%02X:%02X:%02X",
            mac_string_.c_str(),
            esp_bt_address_[5], esp_bt_address_[4], esp_bt_address_[3],
@@ -453,7 +482,9 @@ E_RC SmaInverterDevice::get_inverter_data_cfl(SmaBluetoothHub *hub, uint32_t com
 
       // Parse records
       for (uint16_t ii = 41; ii < pkt_buf_pos_ - 3; ii += recordsize) {
-        if (ii + 20 > pkt_buf_pos_) break;
+        // A 64-bit record (recordsize 16) only needs 16 bytes. The fixed "+20"
+        // guard dropped the last 16-byte record of the energy reply (MeteringDyWhOut / EToday).
+        if (ii + (recordsize == 16 ? 16u : 20u) > pkt_buf_pos_) break;
 
         uint8_t *recptr = pkt_buf_ + ii;
         uint32_t code = get_u32(recptr);
@@ -631,7 +662,7 @@ E_RC SmaInverterDevice::get_packet(SmaBluetoothHub *hub, const uint8_t exp_addr[
       if (hub->bt_read_timeout()) break;
     }
 
-    if (cnt < 17) return E_NODATA;
+    if (cnt < 18) return E_NODATA;
 
     // Validate L1 checksum
     if (!((rd_buf_[0] ^ rd_buf_[1] ^ rd_buf_[2]) == rd_buf_[3])) {

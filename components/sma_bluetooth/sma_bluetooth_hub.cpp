@@ -9,6 +9,7 @@
 #include "nvs.h"
 
 #include <algorithm>
+#include <strings.h>
 
 namespace esphome {
 namespace sma_bluetooth {
@@ -31,8 +32,14 @@ void SmaBluetoothHub::setup() {
     passwords_.push_back("1111");
   }
 
-  // Restore cached inverter MACs from NVS (for autodiscovery persistence across reboots)
-  restore_cached_inverters_();
+  // Restore cached inverter MACs from NVS (for autodiscovery persistence across reboots).
+  // With discovery disabled, every inverter comes from configuration. Wipe NVS cache
+  // to prevent unbounded growth across reboots.
+  if (discovery_enabled_) {
+    restore_cached_inverters_();
+  } else {
+    erase_nvs_cache();
+  }
 
   // Pre-create devices + sensors for all known inverters (configured or cached)
   // so they are registered BEFORE the API sends list_entities to HA.
@@ -625,7 +632,11 @@ void SmaBluetoothHub::bt_task_loop() {
         ESP_LOGD(TTAG, "Poll OK for %s", device->mac_string().c_str());
       } else {
         device->increment_errors();
-        device->publish_unavailable();
+        // Require >= 3 consecutive failed polls before zeroing out power readings
+        // so transient RF interference or packet collisions do not drop power to 0 W.
+        if (device->consecutive_errors() >= 3) {
+          device->publish_unavailable();
+        }
         if (device->consecutive_errors() <= 3) {
           ESP_LOGD(TTAG, "Poll failed for %s (errors: %u)",
                    device->mac_string().c_str(), device->consecutive_errors());
@@ -687,7 +698,13 @@ static const char *NVS_KEY_COUNT = "inv_count";
 // Keys: "inv_name_0", "inv_name_1", ... store name prefixes
 // Keys: "inv_pw_0", "inv_pw_1", ... store working passwords
 
+// Case-insensitive MAC string comparison
+bool SmaBluetoothHub::same_mac_(const std::string &a, const std::string &b) {
+  return a.size() == b.size() && strcasecmp(a.c_str(), b.c_str()) == 0;
+}
+
 void SmaBluetoothHub::save_cached_inverters_() {
+  if (!discovery_enabled_) return;  // Cache only serves discovery mode
   nvs_handle_t handle;
   esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
   if (err != ESP_OK) {
@@ -695,19 +712,29 @@ void SmaBluetoothHub::save_cached_inverters_() {
     return;
   }
 
-  uint8_t count = (uint8_t) devices_.size();
+  // Deduplicate entries by MAC to ensure one entry per unique inverter
+  std::vector<SmaInverterDevice *> unique;
+  for (auto *dev : devices_) {
+    bool dup = false;
+    for (auto *u : unique) {
+      if (same_mac_(u->mac_string(), dev->mac_string())) { dup = true; break; }
+    }
+    if (!dup && unique.size() < 255) unique.push_back(dev);
+  }
+
+  uint8_t count = (uint8_t) unique.size();
   nvs_set_u8(handle, NVS_KEY_COUNT, count);
 
   for (uint8_t i = 0; i < count; i++) {
     char key_mac[16];
     snprintf(key_mac, sizeof(key_mac), "inv_mac_%u", i);
-    nvs_set_str(handle, key_mac, devices_[i]->mac_string().c_str());
+    nvs_set_str(handle, key_mac, unique[i]->mac_string().c_str());
 
     // Save working password if known
-    if (devices_[i]->has_password()) {
+    if (unique[i]->has_password()) {
       char key_pw[16];
       snprintf(key_pw, sizeof(key_pw), "inv_pw_%u", i);
-      nvs_set_str(handle, key_pw, devices_[i]->password());
+      nvs_set_str(handle, key_pw, unique[i]->password());
     }
   }
 
@@ -742,7 +769,15 @@ void SmaBluetoothHub::restore_cached_inverters_() {
 
     esp_err_t mac_err = nvs_get_str(handle, key_mac, mac_buf, &mac_len);
 
+    bool dup = false;
     if (mac_err == ESP_OK) {
+      for (const auto &c : cached_inverter_configs_) {
+        if (same_mac_(c.mac_string, mac_buf)) { dup = true; break; }
+      }
+    }
+    if (mac_err == ESP_OK && dup) {
+      ESP_LOGD(TAG, "  Skipping duplicate cached inverter[%u]: %s", i, mac_buf);
+    } else if (mac_err == ESP_OK) {
       InverterConfig cfg;
       cfg.mac_string = mac_buf;
       cfg.parse_mac_from_string();
@@ -773,6 +808,11 @@ void SmaBluetoothHub::restore_cached_inverters_() {
 // ============================================================
 
 void SmaBluetoothHub::pre_create_devices_() {
+  // Devices registered by the sensor: platform already have YAML-configured
+  // sensors; mark auto-sensors as created so the first poll does not create
+  // duplicates or trigger an unnecessary reboot.
+  for (auto *dev : devices_) dev->skip_auto_sensors();
+
   // Merge configured inverters and cached (discovered) inverters.
   // Configured entries take priority; cached ones fill in the rest.
   std::vector<InverterConfig *> to_create;
@@ -788,10 +828,17 @@ void SmaBluetoothHub::pre_create_devices_() {
     // Skip if already in configured list
     bool already = false;
     for (const auto &cfg : inverter_configs_) {
-      if (cfg.mac_string == cached.mac_string) {
+      if (same_mac_(cfg.mac_string, cached.mac_string)) {
         already = true;
         break;
       }
+    }
+    // Also check against devices registered directly by sensor: platform
+    for (const auto *dev : devices_) {
+      if (same_mac_(dev->mac_string(), cached.mac_string)) { already = true; break; }
+    }
+    for (const auto *q : to_create) {
+      if (same_mac_(q->mac_string, cached.mac_string)) { already = true; break; }
     }
     if (!already) {
       to_create.push_back(&cached);

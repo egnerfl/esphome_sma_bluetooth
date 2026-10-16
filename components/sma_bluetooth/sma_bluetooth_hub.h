@@ -101,6 +101,7 @@ class SmaBluetoothHub : public Component {
   const InverterConfig *find_inverter_config(const uint8_t mac[6]) const;
   SmaInverterDevice *find_device_by_mac(const uint8_t mac[6]) const;
   SmaInverterDevice *create_discovered_device(const uint8_t mac[6], const std::string &bt_name);
+  static bool same_mac_(const std::string &a, const std::string &b);
 
   // Night mode
   bool is_nighttime() const;
